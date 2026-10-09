@@ -1,0 +1,79 @@
+name: Database migrations
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'database/**'
+      - '.github/workflows/migrate.yaml'
+      - 'docker-compose.yml'
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'database/**'
+      - '.github/workflows/migrate.yaml'
+      - 'docker-compose.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migrations-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migrate:
+    name: Apply migrations and check constraints
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: forms_ci
+          POSTGRES_USER: forms_ci
+          # Disposable CI service credentials, never a deployed database secret.
+          POSTGRES_PASSWORD: forms_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forms_ci -d forms_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGDATABASE: forms_ci
+      PGUSER: forms_ci
+      PGPASSWORD: forms_ci_password
+      PGCONNECT_TIMEOUT: '10'
+      PGCLIENTENCODING: UTF8
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+          psql --version
+
+      - name: Apply migrations to fresh database
+        shell: pwsh
+        run: ./database/migrate.ps1 -ConnectionMode Psql
+
+      - name: Verify migration replay is safe
+        shell: pwsh
+        run: ./database/migrate.ps1 -ConnectionMode Psql
+
+      - name: Run database constraint tests
+        shell: pwsh
+        run: ./database/test.ps1 -ConnectionMode Psql

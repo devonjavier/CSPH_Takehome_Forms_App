@@ -1,7 +1,12 @@
+param(
+    [ValidateSet('Compose', 'Psql')]
+    [string]$ConnectionMode = 'Compose'
+)
+
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# Use the existing container's environment without printing or parsing .env secrets.
+# Compose uses container credentials; Psql uses standard PG* environment variables.
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $migrationFiles = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'migrations') -Filter '*.sql' | Sort-Object Name)
 $sql = [System.Text.StringBuilder]::new()
@@ -46,7 +51,11 @@ foreach ($migrationFile in $migrationFiles) {
 Push-Location $repositoryRoot
 try {
     $OutputEncoding = [Text.UTF8Encoding]::new($false)
-    $sql.ToString() | docker compose exec -T db sh -c 'exec psql -X --set=ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+    if ($ConnectionMode -eq 'Psql') {
+        $sql.ToString() | psql -X --no-password --set=ON_ERROR_STOP=1
+    } else {
+        $sql.ToString() | docker compose exec -T db sh -c 'exec psql -X --set=ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+    }
     if ($LASTEXITCODE -ne 0) { throw 'Migration failed; the transaction was not committed.' }
 } finally {
     Pop-Location

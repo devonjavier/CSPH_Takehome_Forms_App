@@ -70,6 +70,38 @@ and retention after archival. They are not API/authentication or concurrency tes
 See [the data model](docs/DATA-MODEL.md) for storage/contract details and the distinction
 between database constraints and service rules. No assessment seed data exists yet.
 
+## GitHub Actions migration checks
+
+`.github/workflows/migrate.yaml` runs when `database/**`, the workflow, or
+`docker-compose.yml` changes on pushes to develop/main or pull requests targeting
+those branches. Manual dispatch is also configured (GitHub requires the workflow
+on the default branch for the manual-run UI).
+
+Each run uses an isolated PostgreSQL 18 service: apply migrations to a fresh database,
+apply again to verify replay, then run the rollback-only constraint tests. CI uses
+disposable credentials declared in the workflow, not your local `.env` or a hosted
+database. No GitHub secrets are required for these tests.
+
+The same PowerShell scripts support a direct PostgreSQL connection when `psql` is
+installed and PGHOST, PGPORT, PGDATABASE, PGUSER, and PGPASSWORD are supplied in the
+environment (or equivalent libpq authentication configuration):
+
+```powershell
+./database/migrate.ps1 -ConnectionMode Psql
+./database/test.ps1 -ConnectionMode Psql
+```
+
+The default remains Compose, so existing local commands are unchanged. Direct mode
+never reads `.env` automatically and disables interactive password prompts. The SQL,
+checksum checks, ledger, transaction, and tests are shared between both modes.
+
+This is CI validation, not deployment to a persistent database. A deployment job
+would require a chosen target and protected connection credentials. Fresh-database
+CI does not prove an upgrade preserves real data or detect edits to older migrations
+across commits; the ledger detects drift when run against an already-migrated database.
+If this workflow becomes a required branch-protection check, account for its path
+filters: skipped workflows can leave required checks pending on unrelated changes.
+
 ## Persistence and stopping
 
 PostgreSQL writes its database files to the named `postgres_data` volume, mounted
