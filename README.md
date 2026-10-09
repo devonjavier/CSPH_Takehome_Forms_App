@@ -1,7 +1,8 @@
 # Forms App
 
-Take-home forms application. Initial setup currently provides local PostgreSQL;
-the Express API, Next.js frontend, and webhook consumer are not scaffolded yet.
+Take-home forms application. Local PostgreSQL and the initial relational schema
+are implemented. The Express API, Next.js frontend, and webhook consumer are not
+scaffolded yet.
 
 ## Prerequisites on Windows
 
@@ -43,8 +44,31 @@ To open the SQL terminal:
 docker compose exec db psql -U forms_dev -d forms_app
 ```
 
-Enter `\dt` to list tables and `\q` to exit. No application tables exist yet;
-we will create them through version-controlled migrations after schema planning.
+Enter `\dt` to list tables and `\q` to exit.
+
+## Migrate and check the database
+
+With Docker Desktop and the database running, execute from the repository root:
+
+```powershell
+.\database\migrate.ps1
+.\database\test.ps1
+```
+
+The migration runner applies numbered SQL files from `database/migrations` in a
+transaction using the container's `psql`. It reads credentials from the container's
+environment without printing them. `schema_migrations` records applied filenames
+and SHA-256 checksums. Repeating the command skips applied files; changing an applied
+file fails. Add a new numbered migration for future schema changes. Existing tables
+with conflicting names fail instead of being overwritten. There is no reset command.
+
+The tests insert temporary fixtures inside a transaction, exercise constraints in
+real PostgreSQL, and roll back. They cover all eight answer storage types, version
+and option membership, duplicate selections/answers, immutable definition updates,
+and retention after archival. They are not API/authentication or concurrency tests.
+
+See [the data model](docs/DATA-MODEL.md) for storage/contract details and the distinction
+between database constraints and service rules. No assessment seed data exists yet.
 
 ## Persistence and stopping
 
