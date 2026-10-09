@@ -1,0 +1,35 @@
+:root {
+  color-scheme: light;
+  font-family: Arial, Helvetica, sans-serif;
+  color: #1f2937;
+  background: #f5f6f8;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 48rem;
+  margin: 12vh auto;
+  padding: 2rem;
+}
+h1 {
+  font-size: clamp(2rem, 6vw, 3.5rem);
+  line-height: 1.1;
+}
+p {
+  line-height: 1.6;
+}
+.eyebrow {
+  font-weight: 700;
+  color: #4338ca;
+}
+.notice {
+  margin-top: 2rem;
+  padding: 1rem;
+  background: white;
+  border: 1px solid #d5d9e0;
+  border-radius: 0.5rem;
+}

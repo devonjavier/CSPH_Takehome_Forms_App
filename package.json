@@ -1,0 +1,33 @@
+{
+  "name": "csph-forms",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
+  },
+  "scripts": {
+    "dev": "concurrently --kill-others --names api,web,consumer \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:consumer\"",
+    "dev:api": "npm run dev --workspace @forms/api",
+    "dev:web": "npm run dev --workspace @forms/web",
+    "dev:consumer": "npm run dev --workspace @forms/webhook-consumer",
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "lint": "eslint apps",
+    "format:check": "prettier --check package.json tsconfig.base.json eslint.config.mjs apps",
+    "format": "prettier --write package.json tsconfig.base.json eslint.config.mjs apps"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.2.0",
+    "eslint": "10.12.0",
+    "prettier": "^3.6.0",
+    "tsx": "^4.20.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.46.0"
+  }
+}

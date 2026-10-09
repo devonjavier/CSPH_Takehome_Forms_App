@@ -1,8 +1,63 @@
 # Forms App
 
-Take-home forms application. Local PostgreSQL and the initial relational schema
-are implemented. The Express API, Next.js frontend, and webhook consumer are not
-scaffolded yet.
+Take-home forms application. Local PostgreSQL, the initial relational schema, and
+three runnable application scaffolds are implemented. Authentication, form building,
+submissions, export, and webhook delivery are subsequent tickets.
+
+## Run the applications
+
+Use Node.js 24 and npm 11. This repository uses npm workspaces with one root
+package-lock.json; run installs from the repository root.
+
+```powershell
+npm ci
+npm run dev
+```
+
+| App | Address | Current behavior |
+|---|---|---|
+| Next.js web | http://localhost:3000 | Responsive placeholder home page |
+| Express API | http://localhost:4000/health | JSON liveness response |
+| Webhook consumer | http://localhost:4001 | Placeholder page; /health returns JSON |
+
+Press Ctrl+C to stop the development apps. You can instead run one app with
+`npm run dev:web`, `npm run dev:api`, or `npm run dev:consumer`.
+
+The apps currently start without PostgreSQL. The API health response is only process
+liveness, not a database readiness check. DB-02 will add the connection lifecycle.
+The consumer does not yet accept POSTs or receive payloads; HOOK-02 implements that.
+
+Root `.env` remains Docker Compose configuration. The API and consumer optionally
+load their own `apps/<name>/.env` via Node's environment-file support; copy their
+`.env.example` if overriding PORT. Neither reads root `.env`. No database credentials
+are passed to Next.js or exposed using NEXT_PUBLIC_. No app env file is required yet.
+
+```powershell
+npm run typecheck
+npm run lint
+npm run format:check
+npm run build
+```
+
+`npm run format` applies the single Prettier configuration to application source.
+After building, run each desired app in its own terminal:
+
+```powershell
+npm run start --workspace @forms/api
+npm run start --workspace @forms/web
+npm run start --workspace @forms/webhook-consumer
+```
+
+Shared strict TypeScript options live in tsconfig.base.json. Node servers use
+NodeNext modules; Next.js uses its bundler configuration and generated route types.
+The API exports the Express app separately from its listening server so later tests
+can import it without opening a fixed port.
+
+Dependencies stay focused: Express handles HTTP, Next/React render the web UI,
+tsx runs TypeScript during development, concurrently starts all three processes,
+and ESLint/Prettier provide linting/formatting. Existing SQL migrations remain the
+schema authority. For DB-02, use the pg driver with parameterized SQL rather than
+introducing a second ORM migration system; the driver is not installed in APP-01.
 
 ## Prerequisites on Windows
 
@@ -149,7 +204,7 @@ Initialization variables apply when the database volume is first created.
 Changing the password in `.env` later does not change an existing database user's
 password; update that password through SQL and align the local configuration.
 
-## Planned application layout
+## Application layout
 
 ```text
 apps/api                 Express + TypeScript
