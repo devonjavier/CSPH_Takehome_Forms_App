@@ -1,7 +1,7 @@
 # Project handoff and progress checkpoint
 
-Last updated: October 9, 2026 (Asia/Manila).
-Current instruction: APP-01 acceptance checks completed; await the next ticket.
+Last updated: October 10, 2026 (Asia/Manila).
+Current instruction: DB-02 implementation and verification completed; await the next ticket.
 ISP interruptions make this file the durable restart point.
 Read AGENTS.md and inspect actual files/status before resuming. Update this file at
 phase boundaries, before a long conversation ends, and before switching major tasks.
@@ -11,9 +11,9 @@ phase boundaries, before a long conversation ends, and before switching major ta
 APP-01 is complete. Production builds for all three apps passed outside the sandbox;
 the previous Turbopack access error was an execution-permission limitation.
 Typecheck, lint, format:check, and six live development HTTP checks passed.
-Next ticket: finish DB-02 (API connection pool, lifecycle, transaction helpers).
-Inspect current files before starting: user added pg, @types/pg, and dotenv already.
-Do not implement AUTH-01 or seed data as part of a DB-02-only request.
+DB-02 is now complete (details below). Next ticket: DB-03 assessment seed fixtures,
+when requested. Do not implement AUTH-01 or seed data without that next scope.
+Inspect current files/status before resuming; preserve the user's commits.
 
 Next.js generated apps/web/AGENTS.md and changed next-env.d.ts to development route
 type paths while running. These are expected generated changes, not application
@@ -84,7 +84,7 @@ GitHub repo. Extra features do not count. AI assistance allowed; ownership expec
 |---|---|
 | SETUP-01 | Complete: Docker/PostgreSQL work locally |
 | DB-01 | User declared complete: schema and contracts established |
-| DB-02 | Partial: migration/constraints complete; API pool/lifecycle/transactions pending |
+| DB-02 | Complete: fresh migration, constraints, API pool/lifecycle/transaction helper and integration tests |
 | APP-01 | Complete: builds, static checks, startup and HTTP smoke checks passed |
 | DB-03 | Not started: assessment seed data |
 | AUTH-01 | Not started |
@@ -140,6 +140,10 @@ unchanged/new migration acceptance and edit/delete/rename rejection all passed.
 
 ## GitHub Actions
 
+October 10 addition: workflow also watches API/package/TS config changes and runs
+the API typecheck and real PostgreSQL integration tests using Node 24/npm ci.
+This updated hosted run has NOT been verified; local tests passed.
+
 `.github/workflows/migrate.yaml`: watches database/workflow/Compose changes on
 develop/main pushes and PRs, plus manual dispatch with required baseline revision.
 Full Git history, append-only file comparison, PostgreSQL 18 service, shared runner
@@ -175,8 +179,9 @@ by the assistant. Avoid resetting databases or removing volumes.
 - npm warned about esbuild install-script allowlisting during installation; actual
   tsx development startup subsequently passed for API and consumer.
 - User's latest commit adds root pg ^8.23.1, @types/pg ^8.23.1, dotenv ^18.0.6.
-  Only manifests/lockfile changed in that commit; no pool implementation exists.
-  Preserve these additions; review workspace placement when implementing DB-02.
+  These root dependencies were preserved. DB-02 also declares pg/@types/pg in the
+  API workspace and reconciles the lockfile. Node env-file loading is used; dotenv
+  is not imported by the current implementation.
 - SQL/psql remains migration authority. README proposes pg + parameterized SQL for
   DB-02, avoiding a competing ORM migration system.
 
@@ -193,11 +198,39 @@ Last scaffold checks:
 | npm run format:check | Passed |
 
 Typecheck and lint were rerun successfully with the user's current dependency set.
-Health endpoints are process liveness only. Database readiness, API integration,
-production hosting, and visual browser QA have not been claimed or implemented.
+The /health endpoint remains liveness only; DB-02 adds /ready for database connectivity.
+Production hosting and visual browser QA have not been claimed or implemented.
+
+## DB-02 completion (October 10)
+
+- apps/api/src/database.ts: pool factory with server PG* config, max 10, connect
+  timeout 2s, idle timeout 10s, statement timeout 5s, idle transaction timeout 10s.
+  Handles idle connection errors with generic logging. DATE parser returns strings.
+- withTransaction(pool, callback): dedicated client; BEGIN/COMMIT/ROLLBACK; checks
+  COMMIT result; preserves original error; releases or discards failed connection.
+- app.ts exports createApp(pool); /ready returns 200 on SELECT 1 or sanitized 503.
+- server.ts verifies DB connection before listening and drains HTTP then pool on
+  shutdown with a 10-second limit. No index.ts needed and no auto-migrations.
+- apps/api/.env.example documents server credentials. Created ignored apps/api/.env
+  from root Compose settings, without logging values or overwriting any existing file.
+  Application never loads root .env or sends DB credentials to Next.js.
+- npm run test:db: Node built-in test runner + tsx, real PostgreSQL temporary-table
+  fixtures. Only test command loads root Compose settings as fallback; CI supplies PG*.
+- Nine passing checks including nested subtests: config validation, commit, callback
+  rollback, constraint rollback, connection reuse, swallowed SQL error detection,
+  DATE/timestamp handling, broken connection discard/recovery, ready/liveness behavior.
+- Fresh migration + replay + SQL constraints passed on disposable PostgreSQL 18
+  container csph-db02-verification at port 55432; container was stopped/removed.
+- Existing database migration replay + constraint tests passed; no existing records
+  reset/deleted. Docker Desktop and existing Compose DB were started for these checks.
+- API typecheck (including tests), lint, API production build, format:check passed.
+- Built API startup smoke check on temporary port 4010 passed /health and /ready;
+  temporary API process stopped. Integration tests explicitly verified pool.end().
+- No migrations changed, no seed data, no auth/business endpoints implemented.
+- Updated CI includes API tests but no new hosted run checked. No commit/push by agent.
 
 ## Resume prompt
 
-"Read AGENTS.md and PROGRESS.md, inspect current files/status, and finish DB-02's
-API connection lifecycle and transaction helpers. Preserve my latest changes.
-Keep scope to that ticket and update PROGRESS.md as you work."
+"Read AGENTS.md and PROGRESS.md, inspect current files/status, and implement DB-03
+assessment seed fixtures. Preserve my latest changes, keep scope to that ticket,
+and update PROGRESS.md as you work."

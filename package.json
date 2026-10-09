@@ -15,6 +15,7 @@
     "dev:web": "npm run dev --workspace @forms/web",
     "dev:consumer": "npm run dev --workspace @forms/webhook-consumer",
     "build": "npm run build --workspaces",
+    "test:db": "npm run test:db --workspace @forms/api",
     "typecheck": "npm run typecheck --workspaces",
     "lint": "eslint apps",
     "format:check": "prettier --check package.json tsconfig.base.json eslint.config.mjs apps",

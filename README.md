@@ -11,6 +11,7 @@ package-lock.json; run installs from the repository root.
 
 ```powershell
 npm ci
+# Start PostgreSQL and configure the API as described below before npm run dev.
 npm run dev
 ```
 
@@ -23,14 +24,22 @@ npm run dev
 Press Ctrl+C to stop the development apps. You can instead run one app with
 `npm run dev:web`, `npm run dev:api`, or `npm run dev:consumer`.
 
-The apps currently start without PostgreSQL. The API health response is only process
-liveness, not a database readiness check. DB-02 will add the connection lifecycle.
+The API requires PostgreSQL and checks its connection before opening the HTTP port.
+`GET /health` reports process liveness; `GET /ready` queries PostgreSQL and returns
+200 when available or a generic 503 without database details when unavailable.
+Readiness verifies connectivity, not migration version or application completeness.
 The consumer does not yet accept POSTs or receive payloads; HOOK-02 implements that.
 
 Root `.env` remains Docker Compose configuration. The API and consumer optionally
 load their own `apps/<name>/.env` via Node's environment-file support; copy their
-`.env.example` if overriding PORT. Neither reads root `.env`. No database credentials
-are passed to Next.js or exposed using NEXT_PUBLIC_. No app env file is required yet.
+`.env.example` when configuring them. Neither server reads root `.env`. No database
+credentials are passed to Next.js or exposed using NEXT_PUBLIC_. The API needs
+PGHOST, PGPORT, PGUSER, PGDATABASE, and PGPASSWORD (host/port have local defaults).
+
+On first setup, copy `apps/api/.env.example` to `apps/api/.env` and set PGPASSWORD
+to the same value as root POSTGRES_PASSWORD. Match PGUSER/PGDATABASE/PGPORT to the
+Compose settings if customized. Do not overwrite an existing API environment file.
+Run `docker compose up -d --wait`, apply migrations, then `npm run dev`.
 
 ```powershell
 npm run typecheck
@@ -50,14 +59,49 @@ npm run start --workspace @forms/webhook-consumer
 
 Shared strict TypeScript options live in tsconfig.base.json. Node servers use
 NodeNext modules; Next.js uses its bundler configuration and generated route types.
-The API exports the Express app separately from its listening server so later tests
-can import it without opening a fixed port.
+The API exports createApp(pool) separately from its listening server so tests can
+use a pool and an ephemeral HTTP port. server.ts is the entry point; an index.ts
+file is not required for PostgreSQL connections or migrations.
 
 Dependencies stay focused: Express handles HTTP, Next/React render the web UI,
 tsx runs TypeScript during development, concurrently starts all three processes,
 and ESLint/Prettier provide linting/formatting. Existing SQL migrations remain the
-schema authority. For DB-02, use the pg driver with parameterized SQL rather than
-introducing a second ORM migration system; the driver is not installed in APP-01.
+schema authority. The API uses the pg driver with parameterized SQL, without a second
+ORM migration system. Existing root pg/dotenv dependencies are preserved; the API
+also declares pg and its types as workspace dependencies. Node loads its environment
+file, so dotenv is not needed by the current server implementation.
+
+## API database lifecycle and transactions
+
+`apps/api/src/database.ts` creates a bounded pool (10 connections, 2-second connection
+timeout, 10-second idle timeout, 5-second statement timeout). An idle connection
+error is handled without printing credentials or raw SQL. DATE values are returned
+as YYYY-MM-DD strings; timestamptz remains a Date representing an instant.
+
+Use pool.query for an independent query. Use withTransaction(pool, async client => ...)
+for related writes and use that supplied client for EVERY query. It commits on
+success, rolls back on failure, preserves the original error, and always releases
+the connection. Failed rollback discards the broken connection. A swallowed SQL
+error cannot turn PostgreSQL's aborted transaction into a reported success.
+Do not manually BEGIN/COMMIT/ROLLBACK or release the client inside that callback.
+Do not nest the helper or perform external webhook requests inside a transaction.
+
+Startup fails if PostgreSQL cannot be reached. SIGINT/SIGTERM stops accepting HTTP
+requests, drains active requests, and ends the pool, with a 10-second shutdown limit.
+Migrations are explicit commands, not automatic side effects of starting the API.
+Ownership and form publication locks belong to later services; this helper does
+not implement those business rules.
+
+```powershell
+npm run test:db
+```
+
+These real PostgreSQL tests use temporary tables that vanish when the connections
+close. They verify commit, rollback, client reuse, failed rollback recovery, date
+handling, and HTTP readiness/liveness. They terminate only their own test backend
+for one failure test; no application records are deleted. The test command alone
+loads the root Compose `.env` and maps POSTGRES_* to PG* unless PG* is already set.
+CI provides PG* directly. Application startup does not use that test-only fallback.
 
 ## Prerequisites on Windows
 
