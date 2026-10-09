@@ -77,3 +77,7 @@ jobs:
       - name: Run database constraint tests
         shell: pwsh
         run: ./database/test.ps1 -ConnectionMode Psql
+
+      - name: Verify missing migration history is rejected
+        shell: pwsh
+        run: ./database/test-migration-history.ps1 -ConnectionMode Psql

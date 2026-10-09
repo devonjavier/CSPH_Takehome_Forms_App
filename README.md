@@ -53,19 +53,26 @@ With Docker Desktop and the database running, execute from the repository root:
 ```powershell
 .\database\migrate.ps1
 .\database\test.ps1
+.\database\test-migration-history.ps1
 ```
 
 The migration runner applies numbered SQL files from `database/migrations` in a
 transaction using the container's `psql`. It reads credentials from the container's
 environment without printing them. `schema_migrations` records applied filenames
 and SHA-256 checksums. Repeating the command skips applied files; changing an applied
-file fails. Add a new numbered migration for future schema changes. Existing tables
+file fails. A ledger entry whose file is missing also fails, listing the missing
+filenames before any pending migration executes (including with an empty directory).
+Restore the original file; do not erase its ledger entry to bypass the check.
+Add a new numbered migration for future schema changes. Existing tables
 with conflicting names fail instead of being overwritten. There is no reset command.
 
 The tests insert temporary fixtures inside a transaction, exercise constraints in
 real PostgreSQL, and roll back. They cover all eight answer storage types, version
 and option membership, duplicate selections/answers, immutable definition updates,
 and retention after archival. They are not API/authentication or concurrency tests.
+The history test runs the real runner with temporary incomplete migration directories
+against the applied ledger. It verifies empty-directory rejection and rejection before
+pending SQL executes, without moving repository files or changing database records.
 
 See [the data model](docs/DATA-MODEL.md) for storage/contract details and the distinction
 between database constraints and service rules. No assessment seed data exists yet.
@@ -78,7 +85,8 @@ those branches. Manual dispatch is also configured (GitHub requires the workflow
 on the default branch for the manual-run UI).
 
 Each run uses an isolated PostgreSQL 18 service: apply migrations to a fresh database,
-apply again to verify replay, then run the rollback-only constraint tests. CI uses
+apply again to verify replay, then run the rollback-only constraint tests and missing
+migration-history regression checks. CI uses
 disposable credentials declared in the workflow, not your local `.env` or a hosted
 database. No GitHub secrets are required for these tests.
 

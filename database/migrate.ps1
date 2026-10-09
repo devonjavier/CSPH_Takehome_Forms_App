@@ -1,6 +1,7 @@
 param(
     [ValidateSet('Compose', 'Psql')]
-    [string]$ConnectionMode = 'Compose'
+    [string]$ConnectionMode = 'Compose',
+    [string]$MigrationDirectory = (Join-Path $PSScriptRoot 'migrations')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,7 +9,14 @@ Set-StrictMode -Version Latest
 
 # Compose uses container credentials; Psql uses standard PG* environment variables.
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$migrationFiles = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'migrations') -Filter '*.sql' | Sort-Object Name)
+$migrationFiles = @(Get-ChildItem -LiteralPath $MigrationDirectory -File -Filter '*.sql' | Sort-Object Name)
+# Validate before placing filenames into SQL, including the complete-history check.
+foreach ($migrationFile in $migrationFiles) {
+    if ($migrationFile.Name -notmatch '^\d{3}_[a-z0-9_]+\.sql$') {
+        throw "Invalid migration filename: $($migrationFile.Name)"
+    }
+}
+$filenameLiterals = ($migrationFiles | ForEach-Object { "'$($_.Name)'" }) -join ', '
 $sql = [System.Text.StringBuilder]::new()
 [void]$sql.AppendLine(@'
 \set ON_ERROR_STOP on
@@ -23,10 +31,23 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );
 '@)
 
+# Run under the migration lock BEFORE any pending SQL. An empty directory must
+# also fail against a populated ledger, rather than silently skipping every file.
+[void]$sql.AppendLine(@"
+DO `$history`$
+DECLARE missing_filenames text;
+BEGIN
+    SELECT string_agg(filename, ', ' ORDER BY filename) INTO missing_filenames
+    FROM schema_migrations
+    WHERE NOT (filename = ANY (ARRAY[$filenameLiterals]::text[]));
+    IF missing_filenames IS NOT NULL THEN
+        RAISE EXCEPTION 'Applied migration files missing from repository: %', missing_filenames;
+    END IF;
+END;
+`$history`$;
+"@)
+
 foreach ($migrationFile in $migrationFiles) {
-    if ($migrationFile.Name -notmatch '^\d{3}_[a-z0-9_]+\.sql$') {
-        throw "Invalid migration filename: $($migrationFile.Name)"
-    }
     $filename = $migrationFile.Name
     # Normalize line endings so Git's Windows checkout conversion does not cause drift.
     $migrationSql = [System.IO.File]::ReadAllText($migrationFile.FullName).Replace("`r`n", "`n")
