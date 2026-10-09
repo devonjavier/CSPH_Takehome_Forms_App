@@ -14,6 +14,11 @@ on:
       - '.github/workflows/migrate.yaml'
       - 'docker-compose.yml'
   workflow_dispatch:
+    inputs:
+      base_revision:
+        description: 'Existing branch/tag/commit whose migrations must remain unchanged'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -58,6 +63,38 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Enforce immutable migration files
+        shell: pwsh
+        env:
+          MANUAL_BASE_REVISION: ${{ inputs.base_revision }}
+        run: |
+          $event = Get-Content -Raw $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+            $baseRevision = $event.pull_request.base.sha
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'push' -and $event.before -notmatch '^0+$') {
+            $baseRevision = $event.before
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            $baseRevision = $env:MANUAL_BASE_REVISION
+          } else {
+            # A new branch has no before commit. Preserve the default branch's
+            # existing migrations when it exists; bootstrap an initial repo otherwise.
+            $defaultRef = "refs/remotes/origin/$($event.repository.default_branch)"
+            git show-ref --verify --quiet $defaultRef
+            if ($LASTEXITCODE -eq 0 -and $env:GITHUB_REF_NAME -ne $event.repository.default_branch) {
+              $baseRevision = git merge-base HEAD $defaultRef
+              if ($LASTEXITCODE -ne 0) { throw 'Cannot determine new-branch baseline.' }
+            } else {
+              $baseRevision = git hash-object -w -t tree /dev/null
+              if ($LASTEXITCODE -ne 0) { throw 'Cannot create initial-repository baseline.' }
+            }
+          }
+          ./database/check-migration-files.ps1 -BaseRevision $baseRevision
+
+      - name: Test migration file policy
+        shell: pwsh
+        run: ./database/test-migration-files.ps1
 
       - name: Install PostgreSQL client
         shell: bash

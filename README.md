@@ -84,6 +84,22 @@ between database constraints and service rules. No assessment seed data exists y
 those branches. Manual dispatch is also configured (GitHub requires the workflow
 on the default branch for the manual-run UI).
 
+Before applying SQL, CI compares committed migration files with the PR base commit
+or the previous push commit. Existing files cannot be edited, deleted, or renamed;
+new files are allowed. A new branch uses its merge base with the default branch;
+an initial repository push has an empty baseline. Manual runs require a baseline
+branch, tag, or commit. Unresolvable baselines fail instead of skipping the check.
+
+Run the file-policy check and its isolated Git-fixture regression tests locally:
+
+```powershell
+./database/check-migration-files.ps1 -BaseRevision origin/develop
+./database/test-migration-files.ps1
+```
+
+The checker compares commits, not uncommitted changes. CI includes full Git history
+and runs regression tests for additions, edits, deletions, and renames.
+
 Each run uses an isolated PostgreSQL 18 service: apply migrations to a fresh database,
 apply again to verify replay, then run the rollback-only constraint tests and missing
 migration-history regression checks. CI uses
@@ -105,8 +121,9 @@ checksum checks, ledger, transaction, and tests are shared between both modes.
 
 This is CI validation, not deployment to a persistent database. A deployment job
 would require a chosen target and protected connection credentials. Fresh-database
-CI does not prove an upgrade preserves real data or detect edits to older migrations
-across commits; the ledger detects drift when run against an already-migrated database.
+CI does not prove an upgrade preserves real data. The Git check protects existing
+migration files across revisions; the ledger separately detects drift or missing
+files when run against an already-migrated database.
 If this workflow becomes a required branch-protection check, account for its path
 filters: skipped workflows can leave required checks pending on unrelated changes.
 
