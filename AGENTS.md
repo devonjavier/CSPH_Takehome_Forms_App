@@ -7,6 +7,9 @@ relationships over cleverness or extra features.
 
 ## Start here
 
+- Read PROGRESS.md for the latest durable handoff and pending verification. Update
+  it at phase boundaries and before context gets long, so ISP interruptions do not
+  lose progress. Distinguish implemented, tested, pending, and externally changed work.
 - Read README.md for the current setup and available commands.
 - Read docs/BUILD-PLAN.md for tickets, acceptance criteria, and agreed behavior.
 - Read docs/DATA-MODEL.md before schema work. It is currently a proposal, not an
