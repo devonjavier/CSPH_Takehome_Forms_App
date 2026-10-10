@@ -11,7 +11,8 @@
     "test:db": "node --env-file-if-exists=../../.env --import tsx --test test/database.test.ts",
     "seed": "node --env-file-if-exists=.env --import tsx scripts/seed.ts",
     "test:seed": "node --env-file-if-exists=.env --import tsx --test test/seed.test.ts",
-    "test:auth": "node --env-file-if-exists=.env --import tsx --test test/auth.test.ts"
+    "test:auth": "node --env-file-if-exists=.env --import tsx --test test/auth.test.ts",
+    "test:forms": "node --env-file-if-exists=.env --import tsx --test test/forms.test.ts"
   },
   "dependencies": {
     "cookie": "^1.1.1",

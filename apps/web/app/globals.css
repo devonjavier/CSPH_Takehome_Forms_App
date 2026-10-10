@@ -54,6 +54,8 @@ a {
   margin-top: 0.5rem;
 }
 input,
+select,
+textarea,
 button {
   font: inherit;
   min-height: 44px;
@@ -65,6 +67,60 @@ input {
   border: 1px solid #6b7280;
   background: white;
   color: #111827;
+}
+.builder {
+  margin-top: 3vh;
+}
+.editor-fields {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.editor-fields label {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+.editor-fields textarea,
+.editor-fields select {
+  width: 100%;
+  max-width: 100%;
+  background: white;
+  color: #111827;
+  border: 1px solid #6b7280;
+}
+.editor-fields textarea {
+  min-height: 6rem;
+  resize: vertical;
+}
+.question-card {
+  min-width: 0;
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid #d5d9e0;
+  border-radius: 0.5rem;
+  background: white;
+}
+.question-card legend {
+  font-weight: bold;
+}
+.editor-fields .checkbox-label {
+  display: flex;
+  align-items: center;
+}
+.checkbox-label input {
+  width: 24px;
+}
+.hint {
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+.option-row {
+  padding-bottom: 1rem;
+}
+.archive-panel {
+  margin-top: 3rem;
+  border-top: 1px solid #d5d9e0;
 }
 button {
   border: 1px solid #3730a3;

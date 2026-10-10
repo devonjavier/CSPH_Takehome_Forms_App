@@ -36,6 +36,28 @@ export default function FormsPage() {
   const [error, setError] = useState("");
   const [signingOut, setSigningOut] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [creating, setCreating] = useState(false);
+  async function createForm() {
+    setCreating(true);
+    setError("");
+    try {
+      const result = await requestApi("/forms", { method: "POST" });
+      if (
+        !isRecord(result) ||
+        !isRecord(result.form) ||
+        typeof result.form.id !== "string"
+      )
+        throw new Error("Could not create the form.");
+      router.push(`/forms/${result.form.id}`);
+    } catch (failure) {
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : "Could not create the form.",
+      );
+      setCreating(false);
+    }
+  }
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
@@ -103,13 +125,18 @@ export default function FormsPage() {
               {signingOut ? "Signing out…" : "Sign out"}
             </button>
           </div>
+          <button disabled={creating} onClick={createForm}>
+            {creating ? "Creating…" : "Create form"}
+          </button>
           {account.forms.length === 0 ? (
             <p className="notice">You don’t have any forms yet.</p>
           ) : (
             <ul className="form-list">
               {account.forms.map((form) => (
                 <li key={form.id}>
-                  <h2>{form.title}</h2>
+                  <h2>
+                    <Link href={`/forms/${form.id}`}>{form.title}</Link>
+                  </h2>
                   <span>{form.isPublished ? "Published" : "Draft"}</span>
                 </li>
               ))}

@@ -37,11 +37,15 @@ export function createApp(pool: Pool, authConfig: AuthConfig) {
     next();
   });
   app.use(requireTrustedOrigin(authConfig));
-  app.use(express.json({ limit: "16kb" }));
-  app.use("/auth", createAuthRouter(pool, authConfig));
+  app.use(
+    "/auth",
+    express.json({ limit: "16kb" }),
+    createAuthRouter(pool, authConfig),
+  );
   app.use(
     "/forms",
     authenticate(pool, authConfig),
+    express.json({ limit: "256kb" }),
     createOwnedFormsRouter(pool),
   );
 

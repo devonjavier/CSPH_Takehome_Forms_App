@@ -196,8 +196,8 @@ and the historical response examples appear below.
 ## Authentication and ownership (AUTH-01)
 
 Open `/register` to create an account, `/login` to sign in, and `/forms` to see your
-forms. The two seeded accounts below work with the login screen. Creation/editing
-of forms will be added in FORM-01; the current form list and detail API are reads.
+forms. The two seeded accounts below work with the login screen. Create a form or
+select an existing form to edit its private draft.
 
 Passwords are 12–128 characters, preserved exactly (never trimmed), and hashed with
 asynchronous Node scrypt before acquiring a database connection. Emails are trimmed,
@@ -233,6 +233,10 @@ login throttling are not implemented in this bounded ticket.
 | GET /auth/me | Authenticated user; missing/invalid/expired session -> 401 |
 | GET /forms | Non-archived forms owned by the verified user |
 | GET /forms/:formId | Owned, non-archived summary; absent/foreign/archived -> same 404 |
+| POST /forms | Create an empty private draft owned by the session user; 201 `{form:{id}}` |
+| GET /forms/:formId/draft | Owner-only `{definition}`; absent/foreign/archived -> 404 |
+| PUT /forms/:formId/draft | Save a draft definition as JSON; 204 |
+| DELETE /forms/:formId | Archive under a form-row lock; 204; retain history |
 
 Management SQL takes the owner UUID from the verified session, never request
 parameters/body. Both list and direct-ID lookups scope by owner and deleted_at.
@@ -268,6 +272,45 @@ Network tests cover disconnected requests, interrupted JSON bodies, recovery, an
 the ten-second request timeout. The account form uses POST even before hydration,
 preventing a native submission from placing credentials in the URL. Normal login
 still requires JavaScript. The migration workflow also runs the network tests.
+
+## Draft builder (FORM-01)
+
+The builder supports all eight question types, required flags, question/option
+ordering, option labels and linear-scale endpoints/labels. Stable UUIDs identify
+editor questions and options; their array order defines position. Changing a type
+preserves its ID, label and required flag while clearing options/scale settings.
+Draft IDs remain separate from immutable published record IDs.
+
+Saving permits blank titles/labels, no questions/options, duplicate option labels,
+and blank or reversed scale endpoints. Publication validation belongs to FORM-02.
+Saving still checks supported types, boolean flags, unique UUIDs, text lengths and
+integer-or-null scale endpoints. Unrelated/incompatible fields are stripped.
+The pure browser-safe contract in `apps/api/src/contracts/draft.ts` is shared with
+the frontend; it imports no server modules, environment variables or credentials.
+
+Limits: 100 questions, 100 options per question, 500 title characters, 1,000 label
+characters, 10,000 description characters, and 256 KiB per JSON request. Auth routes
+retain their 16 KiB limit. Failed saves keep the editor contents and show an error.
+Explicit save feedback distinguishes unsaved changes from the saved draft.
+Concurrent editor saves use last-committed-write-wins; collaborative editing and
+conflict resolution are not implemented.
+
+Create inserts the form and draft atomically. Save and archive verify ownership
+while locking the form root. Archive sets `deleted_at` and disables publication;
+the current version and every stored response remain. The UI requires confirmation,
+and there is no restore feature. Archived forms disappear from the owner list and
+all implemented management reads/writes return 404. Future publish/submission
+operations must acquire this same root lock. No schema migration was needed.
+
+```powershell
+npm run test:forms
+```
+
+The integration suite uses a uniquely named, disposable PostgreSQL schema, genuine
+committed transactions, and multiple connections. It removes only that test schema
+afterward. Tests cover atomic create rollback, ownership and Origin checks, all
+eight draft types, incomplete saves, stable ordering, history preservation, and a
+save observed waiting behind an archive before being rejected. CI runs this suite.
 
 ## GitHub Actions migration checks
 

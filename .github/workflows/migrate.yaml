@@ -153,6 +153,9 @@ jobs:
       - name: Test browser API network failure handling
         run: npm run test:network --workspace @forms/web
 
+      - name: Test draft lifecycle and owner isolation
+        run: npm run test:forms
+
       - name: Seed assessment fixtures and verify safe replay
         run: |
           npm run seed
