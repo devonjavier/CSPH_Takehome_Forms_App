@@ -46,7 +46,12 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           ? "Keep your forms and responses in one place."
           : "Sign in to view your forms."}
       </p>
-      <form onSubmit={submit} aria-busy={pending} className="account-form">
+      <form
+        method="post"
+        onSubmit={submit}
+        aria-busy={pending}
+        className="account-form"
+      >
         <label htmlFor="email">Email address</label>
         <input
           id="email"

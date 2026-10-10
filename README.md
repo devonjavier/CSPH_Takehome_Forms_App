@@ -248,6 +248,7 @@ stack traces, SQL or credentials. Auth/management responses use Cache-Control:no
 
 ```powershell
 npm run test:auth
+npm run test:network --workspace @forms/web
 ```
 
 These HTTP integration tests use an isolated schema and a single-backend test pool
@@ -257,6 +258,16 @@ two-owner isolation, archived visibility, trusted origins and logout. Their toke
 key is test-only. No JWT_SECRET environment variable is needed for test commands.
 The migration workflow includes the auth suite. Browser checks cover login/reload/
 logout, wrong password, duplicate registration, two-owner lists and a 390px layout.
+
+Additional security checks cover missing/malicious Origins on both account routes,
+actual server startup with missing/short secrets, altered session signatures, and
+absence of draft definitions in unauthenticated responses. Unknown-account and
+wrong-password logins both execute real scrypt with identical cost parameters and
+`timingSafeEqual`; this does not promise constant duration for the entire HTTP request.
+Network tests cover disconnected requests, interrupted JSON bodies, recovery, and
+the ten-second request timeout. The account form uses POST even before hydration,
+preventing a native submission from placing credentials in the URL. Normal login
+still requires JavaScript. The migration workflow also runs the network tests.
 
 ## GitHub Actions migration checks
 

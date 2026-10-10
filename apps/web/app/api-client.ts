@@ -12,17 +12,28 @@ export async function requestApi(
   options?: RequestInit,
 ): Promise<unknown> {
   let response: Response;
+  // Network loss does not always reject fetch immediately (e.g. a stalled TCP
+  // connection). Bound both headers and body reading so the form can be retried.
+  const timeout = AbortSignal.timeout(10000);
+  const signal = options?.signal
+    ? AbortSignal.any([options.signal, timeout])
+    : timeout;
+  let body: unknown;
   try {
     response = await fetch(`/api${path}`, {
       ...options,
       credentials: "same-origin",
       cache: "no-store",
+      signal,
     });
+    if (response.status === 204) return null;
+    body = await response.json();
   } catch {
+    if (options?.signal?.aborted) throw new Error("Request cancelled.");
+    if (timeout.aborted)
+      throw new Error("The request timed out. Please try again.");
     throw new Error("Could not reach the server. Please try again.");
   }
-  if (response.status === 204) return null;
-  const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     let message = "Something went wrong. Please try again.";
     if (

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "incremental": false,
+    "plugins": []
+  },
+  "include": ["test/**/*.ts", "app/api-client.ts"],
+  "exclude": ["node_modules"]
+}

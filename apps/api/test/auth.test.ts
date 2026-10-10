@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import crypto, { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { once } from "node:events";
 import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
@@ -69,6 +73,7 @@ test("authentication and owner boundaries over HTTP with PostgreSQL", async (sui
     assert.ok(cookie);
     assert.match(cookie, /HttpOnly/);
     assert.match(cookie, /SameSite=Lax/);
+    assert.match(cookie, /(?:^|;\s*)Path=\/(?:;|$)/);
     assert.match(cookie, /Max-Age=3600/);
     const pair = cookie.split(";")[0];
     assert.ok(pair);
@@ -358,6 +363,130 @@ test("authentication and owner boundaries over HTTP with PostgreSQL", async (sui
     );
 
     await suite.test(
+      "register/login reject missing and malicious Origin",
+      async () => {
+        for (const path of ["/auth/register", "/auth/login"]) {
+          for (const origin of [undefined, "http://malicious-site.com"]) {
+            const headers: Record<string, string> = {
+              "Content-Type": "application/json",
+            };
+            if (origin) headers.Origin = origin;
+            const result = await request(path, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                email: "blocked@example.test",
+                password: demoPassword,
+              }),
+            });
+            assert.equal(result.status, 403);
+            assert.deepEqual(await result.json(), {
+              error: {
+                code: "UNTRUSTED_ORIGIN",
+                message: "This request must come from the forms website.",
+              },
+            });
+          }
+        }
+        assert.equal(
+          (
+            await pool.query(
+              "SELECT id FROM users WHERE email='blocked@example.test'",
+            )
+          ).rowCount,
+          0,
+        );
+      },
+    );
+
+    await suite.test(
+      "unknown email still runs scrypt and constant-time key comparison",
+      async (context) => {
+        // Spy on the actual Node crypto calls without replacing their implementation.
+        // Updating builtin ESM exports makes passwords.ts use the instrumented binding.
+        const scryptSpy = context.mock.method(crypto, "scrypt");
+        const comparisonSpy = context.mock.method(crypto, "timingSafeEqual");
+        syncBuiltinESMExports();
+        try {
+          for (const email of [
+            "absent@example.test",
+            "owner.alpha@example.test",
+          ]) {
+            scryptSpy.mock.resetCalls();
+            comparisonSpy.mock.resetCalls();
+            const result = await post("/auth/login", {
+              email,
+              password: "wrong-password-123",
+            });
+            assert.equal(result.status, 401);
+            assert.equal(scryptSpy.mock.callCount(), 1);
+            assert.equal(comparisonSpy.mock.callCount(), 1);
+            const args = scryptSpy.mock.calls[0]?.arguments;
+            assert.ok(args);
+            assert.equal(args[2], 64);
+            assert.deepEqual(args[3], {
+              N: 32768,
+              r: 8,
+              p: 1,
+              maxmem: 64 * 1024 * 1024,
+            });
+          }
+        } finally {
+          scryptSpy.mock.restore();
+          comparisonSpy.mock.restore();
+          syncBuiltinESMExports();
+        }
+      },
+    );
+
+    await suite.test(
+      "tampered session is rejected and draft definitions never leak",
+      async () => {
+        const marker = "private-draft-review-marker";
+        await pool.query(
+          "UPDATE form_drafts SET definition=jsonb_set(definition,'{privateTestMarker}',to_jsonb($2::text)) WHERE form_id=$1",
+          [fixtureId("survey"), marker],
+        );
+        // Change the signature, leaving the token's payload/expiry intact.
+        const signatureStart = alphaCookie.lastIndexOf(".") + 1;
+        const tampered =
+          alphaCookie.slice(0, signatureStart) +
+          (alphaCookie[signatureStart] === "A" ? "B" : "A") +
+          alphaCookie.slice(signatureStart + 1);
+        assert.equal(
+          (await request("/auth/me", { headers: { Cookie: tampered } })).status,
+          401,
+        );
+        assert.equal(
+          (await request("/forms", { headers: { Cookie: tampered } })).status,
+          401,
+        );
+        for (const path of [
+          "/forms",
+          `/forms/${fixtureId("survey")}`,
+          `/forms/${fixtureId("draft")}`,
+          "/f/demo-survey",
+          "/f/demo-draft",
+          "/public/forms/demo-survey",
+        ]) {
+          const result = await request(path);
+          assert.ok([401, 404].includes(result.status));
+          const body = await result.text();
+          assert.equal(body.includes(marker), false);
+          assert.equal(body.includes('"definition"'), false);
+          assert.equal(body.includes('"questions"'), false);
+        }
+        const own = await request(`/forms/${fixtureId("survey")}`, {
+          headers: { Cookie: alphaCookie },
+        });
+        assert.equal(own.status, 200);
+        const ownBody = await own.text();
+        assert.equal(ownBody.includes(marker), false);
+        assert.equal(ownBody.includes('"definition"'), false);
+      },
+    );
+
+    await suite.test(
       "cross-origin mutations fail and logout clears the cookie",
       async () => {
         for (const origin of ["https://attacker.example", "null", ""]) {
@@ -382,5 +511,36 @@ test("authentication and owner boundaries over HTTP with PostgreSQL", async (sui
     );
     await pool.query("ROLLBACK");
     await pool.end();
+  }
+});
+
+test("actual server process refuses short or absent JWT secrets", async () => {
+  for (const secret of [undefined, "short"]) {
+    const environment: NodeJS.ProcessEnv = { ...process.env, PORT: "4199" };
+    delete environment.JWT_SECRET;
+    if (secret !== undefined) environment.JWT_SECRET = secret;
+    await assert.rejects(
+      promisify(execFile)(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          fileURLToPath(new URL("../src/server.ts", import.meta.url)),
+        ],
+        { env: environment, timeout: 5000 },
+      ),
+      (error: unknown) => {
+        assert.ok(
+          error instanceof Error &&
+            "code" in error &&
+            "stdout" in error &&
+            "stderr" in error,
+        );
+        assert.equal(error.code, 1);
+        assert.equal(String(error.stdout).includes("listening"), false);
+        assert.match(String(error.stderr), /API startup failed.*JWT_SECRET/);
+        return true;
+      },
+    );
   }
 });

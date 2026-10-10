@@ -6,6 +6,7 @@ on:
     paths:
       - 'database/**'
       - 'apps/api/**'
+      - 'apps/web/**'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.base.json'
@@ -16,6 +17,7 @@ on:
     paths:
       - 'database/**'
       - 'apps/api/**'
+      - 'apps/web/**'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.base.json'
@@ -147,6 +149,9 @@ jobs:
 
       - name: Test authentication and owner isolation
         run: npm run test:auth
+
+      - name: Test browser API network failure handling
+        run: npm run test:network --workspace @forms/web
 
       - name: Seed assessment fixtures and verify safe replay
         run: |

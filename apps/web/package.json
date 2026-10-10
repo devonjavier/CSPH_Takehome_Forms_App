@@ -6,7 +6,8 @@
     "dev": "next dev --port 3000",
     "build": "next build",
     "start": "next start --port 3000",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit && tsc -p tsconfig.test.json",
+    "test:network": "node --import tsx --test test/api-client.test.ts"
   },
   "dependencies": {
     "next": "16.4.0",
