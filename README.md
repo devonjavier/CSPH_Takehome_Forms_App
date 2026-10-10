@@ -1,8 +1,8 @@
 # Forms App
 
-Take-home forms application. Local PostgreSQL, the initial relational schema, and
-three runnable application scaffolds are implemented. Authentication, form building,
-submissions, export, and webhook delivery are subsequent tickets.
+Take-home forms application. PostgreSQL, versioned schema/fixtures, account
+registration/login and owner-scoped form reads are implemented. Form building,
+publication, public submissions, export and webhook delivery are subsequent tickets.
 
 ## Run the applications
 
@@ -17,7 +17,7 @@ npm run dev
 
 | App | Address | Current behavior |
 |---|---|---|
-| Next.js web | http://localhost:3000 | Responsive placeholder home page |
+| Next.js web | http://localhost:3000 | Home, login, registration and your forms |
 | Express API | http://localhost:4000/health | JSON liveness response |
 | Webhook consumer | http://localhost:4001 | Placeholder page; /health returns JSON |
 
@@ -39,7 +39,19 @@ PGHOST, PGPORT, PGUSER, PGDATABASE, and PGPASSWORD (host/port have local default
 On first setup, copy `apps/api/.env.example` to `apps/api/.env` and set PGPASSWORD
 to the same value as root POSTGRES_PASSWORD. Match PGUSER/PGDATABASE/PGPORT to the
 Compose settings if customized. Do not overwrite an existing API environment file.
-Run `docker compose up -d --wait`, apply migrations, then `npm run dev`.
+Set a random JWT_SECRET in `apps/api/.env` (at least 32 bytes). Generate one locally:
+
+```powershell
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+Keep it server-side and out of Git. Set WEB_ORIGIN=http://localhost:3000 exactly,
+without a trailing slash. Use that hostname consistently in the browser. Next.js
+forwards `/api/*` to the API at `http://127.0.0.1:4000`; change API_INTERNAL_URL in
+`apps/web/.env` if the API runs elsewhere, and restart/rebuild Next.js afterward.
+The API_INTERNAL_URL setting is server-only and contains no database credentials.
+
+Run `docker compose up -d --wait`, apply migrations, seed if desired, then `npm run dev`.
 
 ```powershell
 npm run typecheck
@@ -59,7 +71,7 @@ npm run start --workspace @forms/webhook-consumer
 
 Shared strict TypeScript options live in tsconfig.base.json. Node servers use
 NodeNext modules; Next.js uses its bundler configuration and generated route types.
-The API exports createApp(pool) separately from its listening server so tests can
+The API exports createApp(pool, authConfig) separately from its listening server so tests can
 use a pool and an ephemeral HTTP port. server.ts is the entry point; an index.ts
 file is not required for PostgreSQL connections or migrations.
 
@@ -173,8 +185,78 @@ The history test runs the real runner with temporary incomplete migration direct
 against the applied ledger. It verifies empty-directory rejection and rejection before
 pending SQL executes, without moving repository files or changing database records.
 
-See [the data model](docs/DATA-MODEL.md) for storage/contract details and the distinction
-between database constraints and service rules. No assessment seed data exists yet.
+See [the schema migration](database/migrations/001_initial_schema.sql) for table,
+index and constraint definitions. Editable JSONB drafts are separate from immutable
+published definitions; responses reference their original version. Composite foreign
+keys bind answers to that version and selections to their question's options.
+Ownership, complete publication validation and stale-submission locking belong in
+the API services; foreign keys alone do not enforce those rules. Seed instructions
+and the historical response examples appear below.
+
+## Authentication and ownership (AUTH-01)
+
+Open `/register` to create an account, `/login` to sign in, and `/forms` to see your
+forms. The two seeded accounts below work with the login screen. Creation/editing
+of forms will be added in FORM-01; the current form list and detail API are reads.
+
+Passwords are 12–128 characters, preserved exactly (never trimmed), and hashed with
+asynchronous Node scrypt before acquiring a database connection. Emails are trimmed,
+lowercased and format-validated. Unique email constraints handle concurrent duplicate
+registration. Login failures use the same message for unknown accounts and incorrect
+passwords, and unknown accounts still perform a dummy password derivation.
+
+The API uses `jose` for signed JWTs and `cookie` for cookie parsing. JWTs use HS256,
+issuer `forms-api`, audience `forms-web`, subject=user UUID, and a one-hour expiry.
+Verification restricts the algorithm and requires subject, issued-at and expiry;
+each protected request also checks that the user still exists. Password hashes and
+tokens are never returned in JSON. No tokens are stored in localStorage.
+
+The `forms_session` cookie is HttpOnly, SameSite=Lax, host-only, Path=/ and lasts
+one hour. Set NODE_ENV=production on the API for Secure cookies; this also requires
+an HTTPS WEB_ORIGIN. Local HTTP development deliberately leaves Secure off.
+Next.js forwards API calls on the browser's origin, so CORS is unnecessary.
+State-changing requests must include an Origin matching WEB_ORIGIN exactly;
+registration/login also require application/json. This protects cookie-authenticated
+requests, including login/logout, against cross-origin browser submissions.
+Command-line clients must send the same Origin header and manage the cookie jar.
+
+Logout clears the browser cookie. JWTs are stateless: a copied token remains valid
+until expiry, there is no refresh token or per-session revocation table, and users
+sign in again after an hour. Password reset, email verification and distributed
+login throttling are not implemented in this bounded ticket.
+
+| API route (prefix `/api` through Next.js) | Result |
+|---|---|
+| POST /auth/register | `{email,password}` -> 201 `{user:{id,email}}` and session cookie |
+| POST /auth/login | `{email,password}` -> 200 `{user:{id,email}}` and session cookie |
+| POST /auth/logout | Clear session cookie; 204 |
+| GET /auth/me | Authenticated user; missing/invalid/expired session -> 401 |
+| GET /forms | Non-archived forms owned by the verified user |
+| GET /forms/:formId | Owned, non-archived summary; absent/foreign/archived -> same 404 |
+
+Management SQL takes the owner UUID from the verified session, never request
+parameters/body. Both list and direct-ID lookups scope by owner and deleted_at.
+Future mutation/response/export/webhook routes must preserve that boundary and join
+back to the owning form. Authentication is mounted on management routes; public
+fill/submit endpoints will be added separately and will remain unauthenticated.
+The public endpoints themselves are not implemented by AUTH-01.
+
+Errors have `{error:{code,message}}` shape. Malformed JSON, invalid credentials,
+oversized bodies, unsupported content types, expired sessions and ownership failures
+produce explicit HTTP statuses. Unexpected errors return a generic 500 without
+stack traces, SQL or credentials. Auth/management responses use Cache-Control:no-store.
+
+```powershell
+npm run test:auth
+```
+
+These HTTP integration tests use an isolated schema and a single-backend test pool
+inside a rollback-only transaction. They verify seeded logins, registration hashing,
+duplicate-registration races, invalid input, expired/forged/wrong-claim tokens,
+two-owner isolation, archived visibility, trusted origins and logout. Their token
+key is test-only. No JWT_SECRET environment variable is needed for test commands.
+The migration workflow includes the auth suite. Browser checks cover login/reload/
+logout, wrong password, duplicate registration, two-owner lists and a 390px layout.
 
 ## GitHub Actions migration checks
 
@@ -251,8 +333,8 @@ Both demo accounts use password `FormsDemo!2026`. These are public sample
 credentials, not production credentials. Passwords are stored as individually
 salted scrypt hashes using Node crypto, formatted
 `scrypt$32768$8$1$<hex salt>$<hex key>` (64-byte key; the hexadecimal salt string
-is passed as UTF-8 to scrypt). AUTH-01 must support this format or explicitly
-migrate it when implementing login; authentication endpoints are not built yet.
+is passed as UTF-8 to scrypt). AUTH-01 verifies this same format; seed accounts can
+sign in without re-seeding or changing stored password hashes.
 
 Version 2 replaces the old notes question with a new question, renames Engineering
 to Product Engineering, and changes the scale maximum from 5 to 10. Version 1's
