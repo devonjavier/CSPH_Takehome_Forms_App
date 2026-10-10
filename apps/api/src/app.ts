@@ -1,7 +1,15 @@
 import express from "express";
 import type { Pool } from "pg";
+import {
+  authenticate,
+  createAuthRouter,
+  requireTrustedOrigin,
+  type AuthConfig,
+} from "./auth.js";
+import { createOwnedFormsRouter } from "./owned-forms.js";
+import { handleError } from "./errors.js";
 
-export function createApp(pool: Pool) {
+export function createApp(pool: Pool, authConfig: AuthConfig) {
   const app = express();
   app.disable("x-powered-by");
 
@@ -24,10 +32,24 @@ export function createApp(pool: Pool) {
     }
   });
 
+  app.use((_request, response, next) => {
+    response.set("Cache-Control", "no-store");
+    next();
+  });
+  app.use(requireTrustedOrigin(authConfig));
+  app.use(express.json({ limit: "16kb" }));
+  app.use("/auth", createAuthRouter(pool, authConfig));
+  app.use(
+    "/forms",
+    authenticate(pool, authConfig),
+    createOwnedFormsRouter(pool),
+  );
+
   app.use((_request, response) => {
     response.status(404).json({
       error: { code: "NOT_FOUND", message: "This endpoint does not exist." },
     });
   });
+  app.use(handleError);
   return app;
 }

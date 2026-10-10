@@ -1,5 +1,6 @@
 import { createApp } from "./app.js";
 import { createDatabasePool } from "./database.js";
+import { readAuthConfig } from "./auth.js";
 
 const port = Number(process.env.PORT ?? "4000");
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -7,6 +8,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 async function startServer() {
+  const authConfig = readAuthConfig();
   const pool = createDatabasePool();
   try {
     await pool.query("SELECT 1");
@@ -17,7 +19,8 @@ async function startServer() {
     );
   }
 
-  const server = createApp(pool).listen(port, () => {
+  const server = createApp(pool, authConfig).listen(port);
+  server.once("listening", () => {
     console.log(`Forms API listening on http://localhost:${port}`);
   });
   let shuttingDown = false;
@@ -51,7 +54,7 @@ async function startServer() {
 
 void startServer().catch(() => {
   console.error(
-    "API startup failed. Check PORT, PG* configuration, and database availability.",
+    "API startup failed. Check PORT, PG*, JWT_SECRET, WEB_ORIGIN and database availability.",
   );
   process.exitCode = 1;
 });
