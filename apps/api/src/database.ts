@@ -4,7 +4,6 @@ import { Pool, types, type PoolClient } from "pg";
 types.setTypeParser(types.builtins.DATE, (value) => value);
 
 export function createDatabasePool(
-
   environment: NodeJS.ProcessEnv = process.env,
 ): Pool {
   const { PGUSER, PGDATABASE, PGPASSWORD } = environment;
@@ -33,7 +32,7 @@ export function createDatabasePool(
     idle_in_transaction_session_timeout: 10000,
     application_name: "forms-api",
   });
-  
+
   // pg emits errors for idle connections too. Never log credentials or raw SQL.
   pool.on("error", () =>
     console.error("An idle database connection was lost."),
@@ -47,10 +46,22 @@ export async function withTransaction<Result>(
 ): Promise<Result> {
   const client = await pool.connect();
   let discardConnection = false;
+  let connectionError: Error | undefined;
+  // Checked-out clients no longer have the pool's idle error listener. Record
+  // errors rather than throwing from an event callback (outside this try/catch).
+  function handleConnectionError(error: Error) {
+    discardConnection = true;
+    connectionError ??= error;
+  }
+  client.on("error", handleConnectionError);
   try {
     await client.query("BEGIN");
     const result = await operation(client);
+    // A callback may finish without issuing another query after the connection
+    // fails. Do not turn that into a successful transaction or attempt a commit.
+    if (connectionError) throw connectionError;
     const commit = await client.query("COMMIT");
+    if (connectionError) throw connectionError;
     // PostgreSQL reports ROLLBACK if a callback swallowed an earlier SQL error.
     if (commit.command !== "COMMIT") {
       throw new Error("The transaction was aborted and could not commit.");
@@ -65,6 +76,9 @@ export async function withTransaction<Result>(
     throw error;
   } finally {
     // Every statement in the callback must use this client, never pool.query.
+    // No await between removal and release: pg-pool restores its own listener
+    // synchronously when release is called, including when discarding a client.
+    client.removeListener("error", handleConnectionError);
     client.release(discardConnection);
   }
 }

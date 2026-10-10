@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { once } from "node:events";
 import test from "node:test";
+import { promisify } from "node:util";
 import { createApp } from "../src/app.js";
 import { createDatabasePool, withTransaction } from "../src/database.js";
 
@@ -149,7 +151,6 @@ test("real PostgreSQL transactions and HTTP readiness", async (suite) => {
         await assert.rejects(
           withTransaction(pool, async (client) => {
             // Terminate only this test's own backend to exercise rollback failure.
-            client.on("error", () => {});
             await client.query("SELECT pg_terminate_backend(pg_backend_pid())");
           }),
         );
@@ -190,4 +191,73 @@ test("real PostgreSQL transactions and HTTP readiness", async (suite) => {
   } finally {
     if (!poolClosed) await pool.end();
   }
+});
+
+test("client error events reject successful callbacks and discard the connection", async () => {
+  const pool = createDatabasePool(testEnvironment);
+  const connectionError = new Error("simulated checked-out connection failure");
+  try {
+    await assert.rejects(
+      withTransaction(pool, async (client) => {
+        client.emit("error", connectionError);
+        // Emitting does not break the underlying socket. Without the explicit
+        // failure check, this callback could incorrectly commit and return success.
+        return "must not succeed";
+      }),
+      (error: unknown) => error === connectionError,
+    );
+    assert.equal(pool.totalCount, 0);
+    await pool.query("SELECT 1");
+    assert.equal(pool.totalCount, pool.idleCount);
+
+    // Reusing healthy clients must not accumulate transaction error listeners.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await withTransaction(pool, async (client) => {
+        assert.equal(client.listenerCount("error"), 1);
+        await client.query("SELECT 1");
+      });
+    }
+    const client = await pool.connect();
+    try {
+      assert.equal(client.listenerCount("error"), 0);
+    } finally {
+      client.release();
+    }
+  } finally {
+    await pool.end();
+  }
+});
+
+test("idle transaction connection loss does not crash the process and the pool recovers", async () => {
+  // Run the actual helper in a separate process: an unhandled EventEmitter error
+  // must fail this test, never be hidden by the test runner or a test-only listener.
+  const databaseModuleUrl = new URL("../src/database.ts", import.meta.url).href;
+  const childSource = `
+    import assert from "node:assert/strict";
+    import { setTimeout as delay } from "node:timers/promises";
+    import { createDatabasePool, withTransaction } from ${JSON.stringify(databaseModuleUrl)};
+    const pool = createDatabasePool();
+    try {
+      const before = await pool.query("SELECT pg_backend_pid() AS pid");
+      await assert.rejects(withTransaction(pool, async (client) => {
+        await client.query("SET LOCAL idle_in_transaction_session_timeout='100ms'");
+        await delay(750);
+        return "must not commit";
+      }), { code: "25P03" });
+      assert.equal(pool.totalCount, 0);
+      const after = await pool.query("SELECT pg_backend_pid() AS pid");
+      assert.notEqual(after.rows[0].pid, before.rows[0].pid);
+      assert.equal(pool.totalCount, pool.idleCount);
+      console.log("Connection failure handled; pool recovered.");
+    } finally {
+      await pool.end();
+    }
+  `;
+  const { stdout, stderr } = await promisify(execFile)(
+    process.execPath,
+    ["--import", "tsx", "--input-type=module", "--eval", childSource],
+    { env: testEnvironment, timeout: 15000 },
+  );
+  assert.match(stdout, /Connection failure handled; pool recovered/);
+  assert.equal(stderr, "");
 });
