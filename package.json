@@ -18,6 +18,7 @@
     "test:db": "npm run test:db --workspace @forms/api",
     "seed": "npm run seed --workspace @forms/api",
     "test:seed": "npm run test:seed --workspace @forms/api",
+    "test:auth": "npm run test:auth --workspace @forms/api",
     "typecheck": "npm run typecheck --workspaces",
     "lint": "eslint apps",
     "format:check": "prettier --check package.json tsconfig.base.json eslint.config.mjs apps",
