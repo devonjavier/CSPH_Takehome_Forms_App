@@ -162,7 +162,13 @@ test("real PostgreSQL transactions and HTTP readiness", async (suite) => {
     await suite.test(
       "ready succeeds, then returns sanitized 503 while liveness stays available",
       async () => {
-        const server = createApp(pool).listen(0, "127.0.0.1");
+        const server = createApp(pool, {
+          secret: new TextEncoder().encode(
+            "database-tests-only-secret-32-bytes",
+          ),
+          webOrigin: "http://localhost:3000",
+          secureCookies: false,
+        }).listen(0, "127.0.0.1");
         await once(server, "listening");
         const address = server.address();
         assert.ok(address && typeof address !== "string");

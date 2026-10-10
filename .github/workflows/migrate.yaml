@@ -145,6 +145,9 @@ jobs:
       - name: Test seed fixtures and rollback safety
         run: npm run test:seed
 
+      - name: Test authentication and owner isolation
+        run: npm run test:auth
+
       - name: Seed assessment fixtures and verify safe replay
         run: |
           npm run seed
