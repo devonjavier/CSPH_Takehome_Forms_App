@@ -8,7 +8,9 @@
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=.env dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
-    "test:db": "node --env-file-if-exists=../../.env --import tsx --test test/database.test.ts"
+    "test:db": "node --env-file-if-exists=../../.env --import tsx --test test/database.test.ts",
+    "seed": "node --env-file-if-exists=.env --import tsx scripts/seed.ts",
+    "test:seed": "node --env-file-if-exists=.env --import tsx --test test/seed.test.ts"
   },
   "dependencies": {
     "express": "5.2.1",

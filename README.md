@@ -226,6 +226,66 @@ files when run against an already-migrated database.
 If this workflow becomes a required branch-protection check, account for its path
 filters: skipped workflows can leave required checks pending on unrelated changes.
 
+## Assessment sample data (DB-03)
+
+With PostgreSQL running and `apps/api/.env` configured as above, run from the root:
+
+```powershell
+./database/migrate.ps1
+npm run seed
+npm run test:seed
+```
+
+The seed command uses the API's PG* connection settings. Run it only against the
+development/assessment database you intend to populate. CI supplies PG* directly.
+No extra dependencies or database reset are needed.
+
+| Owner email | Form slug | State and sample responses |
+|---|---|---|
+| owner.alpha@example.test | demo-survey | Published v2; all eight types in both versions; 2 responses on v1, 4 on v2 |
+| owner.alpha@example.test | demo-draft | Never published; empty title/questions intentionally allowed in a draft |
+| owner.beta@example.test | demo-acknowledgment | Published; required single-checkbox question; zero responses |
+| owner.beta@example.test | demo-archived | Archived/offline; one historical response retained |
+
+Both demo accounts use password `FormsDemo!2026`. These are public sample
+credentials, not production credentials. Passwords are stored as individually
+salted scrypt hashes using Node crypto, formatted
+`scrypt$32768$8$1$<hex salt>$<hex key>` (64-byte key; the hexadecimal salt string
+is passed as UTF-8 to scrypt). AUTH-01 must support this format or explicitly
+migrate it when implementing login; authentication endpoints are not built yet.
+
+Version 2 replaces the old notes question with a new question, renames Engineering
+to Product Engineering, and changes the scale maximum from 5 to 10. Version 1's
+definitions and answers retain their own IDs. Draft questions/options have separate
+stable editor IDs. Both text questions deliberately share the label "Details" to
+exercise ID-based rendering and export columns.
+
+Answer fixtures include optional blanks, repeated respondent emails, minimum and
+maximum ratings, leap-day dates, multiple selected options in a different order
+from the option list, Unicode, quotes, multiline text, HTML-looking text, and
+`=SUM(1,2)` stored as literal text. These prepare later UI/XLSX tests; they do not
+claim escaping or export functionality already exists. Invalid foreign options,
+cross-version answers, and duplicates belong in rollback-only constraint tests,
+not in persistent sample records.
+
+The survey webhook is configured for `http://localhost:4001/webhooks` with sample
+secret `demo-webhook-secret-local-only`. No HTTP calls or pretend delivery attempts
+are made by seeding. The consumer route/secret validation comes in HOOK-02; configure
+its matching secret then. This URL assumes the API and consumer run on the host.
+
+All inserts share one transaction and a seed-specific advisory lock. Stable IDs
+identify the fixture set. If both owners and all four form roots already exist,
+the command reports `already present` and changes nothing, preserving subsequent
+draft/password edits and new responses. A partial set fails for manual inspection;
+conflicting IDs, emails, or slugs roll back the whole operation. Rerunning is not a
+reset or repair command, and never restores manually removed fixture children.
+
+`npm run test:seed` applies migrations in an isolated PostgreSQL schema inside a
+transaction, checks fixtures, password hashes, history, collision rollback and
+edit-preserving replay, then rolls everything back. It requires schema-creation
+permission (available to the local Compose and disposable CI database users).
+The migration workflow runs these tests and executes the actual seed command twice.
+
 ## Persistence and stopping
 
 PostgreSQL writes its database files to the named `postgres_data` volume, mounted

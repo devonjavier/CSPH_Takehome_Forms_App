@@ -141,3 +141,11 @@ jobs:
 
       - name: Test API database transactions and readiness
         run: npm run test:db
+
+      - name: Test seed fixtures and rollback safety
+        run: npm run test:seed
+
+      - name: Seed assessment fixtures and verify safe replay
+        run: |
+          npm run seed
+          npm run seed
