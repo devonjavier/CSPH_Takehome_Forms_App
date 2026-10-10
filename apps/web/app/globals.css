@@ -33,3 +33,88 @@ p {
   border: 1px solid #d5d9e0;
   border-radius: 0.5rem;
 }
+
+a {
+  color: #3730a3;
+  text-underline-offset: 0.2em;
+}
+.brand {
+  font-weight: 700;
+}
+.account-page {
+  max-width: 32rem;
+}
+.account-form {
+  display: grid;
+  gap: 0.75rem;
+  margin: 2rem 0;
+}
+.account-form label {
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+input,
+button {
+  font: inherit;
+  min-height: 44px;
+  border-radius: 0.4rem;
+  padding: 0.75rem;
+}
+input {
+  width: 100%;
+  border: 1px solid #6b7280;
+  background: white;
+  color: #111827;
+}
+button {
+  border: 1px solid #3730a3;
+  background: #3730a3;
+  color: white;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+:focus-visible {
+  outline: 3px solid #b45309;
+  outline-offset: 3px;
+}
+.error {
+  color: #991b1b;
+  overflow-wrap: anywhere;
+}
+.account-bar,
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.account-bar p {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.form-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+.form-list li {
+  background: white;
+  padding: 1.25rem;
+  border: 1px solid #d5d9e0;
+  border-radius: 0.5rem;
+  overflow-wrap: anywhere;
+}
+.form-list h2 {
+  margin-top: 0;
+  font-size: 1.25rem;
+}
+@media (max-width: 480px) {
+  main {
+    margin: 3vh auto;
+    padding: 1.25rem;
+  }
+}
