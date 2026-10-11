@@ -467,7 +467,6 @@ test("authentication and owner boundaries over HTTP with PostgreSQL", async (sui
           `/forms/${fixtureId("draft")}`,
           "/f/demo-survey",
           "/f/demo-draft",
-          "/public/forms/demo-survey",
         ]) {
           const result = await request(path);
           assert.ok([401, 404].includes(result.status));
@@ -476,6 +475,12 @@ test("authentication and owner boundaries over HTTP with PostgreSQL", async (sui
           assert.equal(body.includes('"definition"'), false);
           assert.equal(body.includes('"questions"'), false);
         }
+        const published = await request("/public/forms/demo-survey");
+        assert.equal(published.status, 200);
+        const publishedBody = await published.text();
+        assert.equal(publishedBody.includes(marker), false);
+        assert.equal(publishedBody.includes('"definition"'), false);
+        assert.equal((await request("/public/forms/demo-draft")).status, 404);
         const own = await request(`/forms/${fixtureId("survey")}`, {
           headers: { Cookie: alphaCookie },
         });

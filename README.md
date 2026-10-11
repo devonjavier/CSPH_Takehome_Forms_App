@@ -237,13 +237,17 @@ login throttling are not implemented in this bounded ticket.
 | GET /forms/:formId/draft | Owner-only `{definition}`; absent/foreign/archived -> 404 |
 | PUT /forms/:formId/draft | Save a draft definition as JSON; 204 |
 | DELETE /forms/:formId | Archive under a form-row lock; 204; retain history |
+| GET /forms/:formId/publication | Owner-only slug, online state and latest version |
+| POST /forms/:formId/publish | `{publicationActionId,definition}`; 201 for new version, 200 for replay |
+| POST /forms/:formId/unpublish | Take offline, retain pointer and history; 204 |
+| GET /public/forms/:slug | Anonymous current published definition; offline/draft/archived/missing -> 404 |
 
 Management SQL takes the owner UUID from the verified session, never request
 parameters/body. Both list and direct-ID lookups scope by owner and deleted_at.
 Future mutation/response/export/webhook routes must preserve that boundary and join
 back to the owning form. Authentication is mounted on management routes; public
-fill/submit endpoints will be added separately and will remain unauthenticated.
-The public endpoints themselves are not implemented by AUTH-01.
+definition reads are now available without authentication. The respondent screen
+and submission endpoint belong to RESP-01.
 
 Errors have `{error:{code,message}}` shape. Malformed JSON, invalid credentials,
 oversized bodies, unsupported content types, expired sessions and ownership failures
@@ -282,7 +286,7 @@ preserves its ID, label and required flag while clearing options/scale settings.
 Draft IDs remain separate from immutable published record IDs.
 
 Saving permits blank titles/labels, no questions/options, duplicate option labels,
-and blank or reversed scale endpoints. Publication validation belongs to FORM-02.
+and blank or reversed scale endpoints. Publication validates these more strictly.
 Saving still checks supported types, boolean flags, unique UUIDs, text lengths and
 integer-or-null scale endpoints. Unrelated/incompatible fields are stripped.
 The pure browser-safe contract in `apps/api/src/contracts/draft.ts` is shared with
@@ -311,6 +315,64 @@ committed transactions, and multiple connections. It removes only that test sche
 afterward. Tests cover atomic create rollback, ownership and Origin checks, all
 eight draft types, incomplete saves, stable ordering, history preservation, and a
 save observed waiting behind an archive before being rejected. CI runs this suite.
+
+## Publication (FORM-02)
+
+Save the draft, choose Publish changes and confirm. Every fresh confirmation creates
+a new version, even with identical content. Publishing an offline form also creates
+a new version. Publishing requires a nonblank title and at least one question with
+a nonblank label. Choice labels must be nonblank and distinct after trimming
+(case-sensitive); optional choices and checkboxes allow one option, while other
+required choices need two. Scale endpoints must be integers with minimum less than
+maximum. Published option labels are trimmed; the draft remains unchanged. Question
+labels may repeat.
+
+The request carries a client-generated action UUID and the saved definition the
+owner reviewed. Under a form-row lock, the API checks for an existing action first.
+A replay returns its original version without changing the pointer or bringing an
+unpublished form online. A new action compares the normalized expected definition
+with the stored draft (409 DRAFT_CHANGED on mismatch), validates it, and atomically
+inserts the version/questions/options before switching the pointer. Each version
+gets fresh question/option IDs. Existing unique action and version-number constraints
+remain the final integrity checks. No migration is required.
+
+The browser retains an uncertain action and snapshot for Retry publication after
+network/5xx failures while that editor page stays open. Keep it open until resolved;
+pending action state does not survive reload/navigation. API clients must reuse the
+original action ID for transport retries.
+
+Unpublish disables public access while retaining owner access and the current pointer.
+Archive additionally removes owner application access. Save, publish, unpublish and
+archive acquire the same root lock and retain historical rows. Submission must
+acquire that lock too when implemented in RESP-01.
+
+The anonymous JSON endpoint reads visibility and the current immutable definition
+in one SQL statement. It includes formVersionId and ordered questions/options,
+never drafts, users, responses or webhook secrets. Public responses use no-store.
+The builder shows the stable slug; public web rendering and the shareable frontend
+link are RESP-01 work. There is no submission endpoint yet.
+
+```powershell
+npm run test:publication
+```
+
+The suite uses a uniquely named disposable PostgreSQL schema, removed afterward.
+It covers validation, concurrent duplicate/fresh actions, replay after unpublish,
+stale draft comparison, mid-tree rollback, public visibility, ownership, archive/
+publish locking and historical retention. CI runs it; hosted execution is separate.
+
+To inspect archived response counts, follow the version relationship (responses
+has form_version_id, not form_id):
+
+```sql
+SELECT f.id, f.deleted_at,
+       (SELECT count(*) FROM form_versions v WHERE v.form_id=f.id) AS versions,
+       (SELECT count(*) FROM responses r
+        JOIN form_versions v ON v.id=r.form_version_id
+        WHERE v.form_id=f.id) AS responses
+FROM forms f
+WHERE f.deleted_at IS NOT NULL;
+```
 
 ## GitHub Actions migration checks
 

@@ -156,6 +156,9 @@ jobs:
       - name: Test draft lifecycle and owner isolation
         run: npm run test:forms
 
+      - name: Test publication transactions and public visibility
+        run: npm run test:publication
+
       - name: Seed assessment fixtures and verify safe replay
         run: |
           npm run seed
