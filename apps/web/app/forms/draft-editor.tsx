@@ -13,6 +13,7 @@ import {
   type QuestionType,
 } from "../../../api/src/contracts/draft";
 import { ApiError, isRecord, requestApi } from "../api-client";
+import { PublicationControls } from "./publication-controls";
 
 const typeLabels: Record<QuestionType, string> = {
   short_text: "Short text",
@@ -466,6 +467,13 @@ export function DraftEditor({ formId }: { formId: string }) {
               </button>
             </div>
           </fieldset>
+          <PublicationControls
+            formId={formId}
+            definition={draft}
+            hasUnsavedChanges={dirty}
+            busy={busy}
+            onBusyChange={setBusy}
+          />
           <section className="archive-panel">
             <h2>Archive form</h2>
             <p>
