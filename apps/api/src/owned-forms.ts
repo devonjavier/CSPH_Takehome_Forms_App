@@ -4,6 +4,7 @@ import { HttpError } from "./errors.js";
 import { uuidPattern } from "./auth.js";
 import { parseDraft } from "./contracts/draft.js";
 import { archiveForm, createDraft, saveDraft } from "./form-drafts.js";
+import { publishForm, unpublishForm } from "./publication.js";
 
 // All management reads establish ownership in SQL, including direct UUID lookup.
 // Never reuse these projections for public forms: drafts are owner-only data.
@@ -18,6 +19,61 @@ export function createOwnedFormsRouter(pool: Pool): Router {
     response
       .status(201)
       .json({ form: await createDraft(pool, response.locals.user.id) });
+  });
+  router.get("/:formId/publication", async (request, response) => {
+    const result = await pool.query(
+      `SELECT f.slug,f.is_published AS "isPublished",f.current_version_id AS "formVersionId",v.version_number AS "versionNumber"
+       FROM forms f LEFT JOIN form_versions v ON v.id=f.current_version_id
+       WHERE f.id=$1 AND f.owner_id=$2 AND f.deleted_at IS NULL`,
+      [request.params.formId, response.locals.user.id],
+    );
+    if (!result.rows[0])
+      throw new HttpError(404, "NOT_FOUND", "Form not found.");
+    response.json({ publication: result.rows[0] });
+  });
+  router.post("/:formId/publish", async (request, response) => {
+    if (!request.is("application/json"))
+      throw new HttpError(415, "JSON_REQUIRED", "Send application/json.");
+    const body: unknown = request.body;
+    if (
+      !body ||
+      typeof body !== "object" ||
+      !("publicationActionId" in body) ||
+      typeof body.publicationActionId !== "string" ||
+      !uuidPattern.test(body.publicationActionId) ||
+      !("definition" in body)
+    )
+      throw new HttpError(
+        400,
+        "INVALID_PUBLICATION",
+        "Send a publication action UUID and the saved definition.",
+      );
+    let definition;
+    try {
+      definition = parseDraft(body.definition);
+    } catch (error) {
+      throw new HttpError(
+        400,
+        "INVALID_PUBLICATION",
+        error instanceof Error ? error.message : "Invalid definition.",
+      );
+    }
+    const publication = await publishForm(
+      pool,
+      response.locals.user.id,
+      String(request.params.formId),
+      body.publicationActionId,
+      definition,
+    );
+    response.status(publication.replayed ? 200 : 201).json({ publication });
+  });
+  router.post("/:formId/unpublish", async (request, response) => {
+    await unpublishForm(
+      pool,
+      response.locals.user.id,
+      String(request.params.formId),
+    );
+    response.status(204).end();
   });
   router.get("/:formId/draft", async (request, response) => {
     const result = await pool.query(

@@ -8,6 +8,7 @@ import {
 } from "./auth.js";
 import { createOwnedFormsRouter } from "./owned-forms.js";
 import { handleError } from "./errors.js";
+import { createPublicFormsRouter } from "./public-forms.js";
 
 export function createApp(pool: Pool, authConfig: AuthConfig) {
   const app = express();
@@ -37,6 +38,7 @@ export function createApp(pool: Pool, authConfig: AuthConfig) {
     next();
   });
   app.use(requireTrustedOrigin(authConfig));
+  app.use("/public/forms", createPublicFormsRouter(pool));
   app.use(
     "/auth",
     express.json({ limit: "16kb" }),
