@@ -1,8 +1,8 @@
 # Forms App
 
-Take-home forms application. PostgreSQL, versioned schema/fixtures, account
-registration/login and owner-scoped form reads are implemented. Form building,
-publication, public submissions, export and webhook delivery are subsequent tickets.
+Take-home forms application. PostgreSQL, versioned schema/fixtures, authentication,
+owner-scoped form building/publication, and public submissions are implemented.
+Owner response viewing, XLSX export and webhook delivery remain subsequent tickets.
 
 ## Run the applications
 
@@ -516,3 +516,57 @@ apps/webhook-consumer    Minimal webhook receiver and list view
 
 The applications will initially run on Windows while PostgreSQL runs in Docker.
 The API connects to PostgreSQL; the browser never receives database credentials.
+
+## Public forms and submissions (RESP-01)
+
+Publish a saved form and choose **Open public form** in the builder. Its shareable
+web address is `/f/<slug>`; the seeded survey is `http://localhost:3000/f/demo-survey`.
+Respondents do not need an account. Draft, unpublished and archived forms are hidden.
+
+`GET /public/forms/:slug` returns only the current published definition.
+`POST /public/forms/:slug/responses` accepts JSON:
+
+```json
+{
+  "formVersionId": "<published version UUID>",
+  "email": "respondent@example.test",
+  "answers": [
+    { "questionId": "<published question UUID>", "value": "An answer" }
+  ]
+}
+```
+
+Use published question/option IDs from GET, never draft IDs. Answer values are:
+
+| Question type | Value |
+|---|---|
+| Short text | Single-line string, at most 1,000 characters |
+| Long text | String, newlines allowed, at most 10,000 characters |
+| Date | Real `YYYY-MM-DD` date, years 0001–9999 |
+| Dropdown / multiple choice | One option UUID |
+| Multi-select / checkboxes | Array of distinct option UUIDs for that question |
+| Linear scale | Integer between the published endpoints, inclusive |
+
+The request limit is 2 MiB. Optional omitted/null/blank values and empty multiple
+selections become unanswered; malformed values still fail. Every question gets one
+answer row, with null scalar columns and no selections when unanswered. Email is
+trimmed/lowercased; repeated emails are allowed. Required whitespace-only answers,
+duplicate/unknown questions, foreign or historical options, invalid dates and
+out-of-range scales return `400 INVALID_SUBMISSION` with a safe `field` identifier.
+All browser mutations require the configured WEB_ORIGIN as their Origin header.
+
+Submission locks the form row used by publish/unpublish/archive, then rechecks
+visibility and the current version. Responses, answers and selections commit as one
+transaction. A newer version returns `409 FORM_UPDATED`; offline or archived forms
+return 404. The browser retains entered answers and asks the respondent to refresh
+explicitly. A successful submission returns 201 with the response ID and timestamp.
+These API responses use `Cache-Control: no-store`.
+
+An in-flight guard prevents repeated clicks. Submission has no idempotency key:
+if the server commits but the connection fails before confirmation, a manual retry
+may create another response. Webhook delivery is not implemented in this ticket.
+
+Run `npm run test:responses` for real PostgreSQL validation, rollback and both lock
+orders of submit versus publish/unpublish/archive. The suite creates and removes
+its own isolated schema and never resets application data. It also runs in the
+migration workflow; hosted CI execution must be checked separately.
