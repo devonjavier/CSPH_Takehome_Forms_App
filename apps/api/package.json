@@ -15,10 +15,12 @@
     "test:forms": "node --env-file-if-exists=.env --import tsx --test test/forms.test.ts",
     "test:publication": "node --env-file-if-exists=.env --import tsx --test test/publication.test.ts",
     "test:responses": "node --env-file-if-exists=.env --import tsx --test test/responses.test.ts",
-    "test:owned-responses": "node --env-file-if-exists=.env --import tsx --test test/owned-responses.test.ts"
+    "test:owned-responses": "node --env-file-if-exists=.env --import tsx --test test/owned-responses.test.ts",
+    "test:export": "node --env-file-if-exists=.env --import tsx --test test/response-export.test.ts"
   },
   "dependencies": {
     "cookie": "^1.1.1",
+    "exceljs": "^4.4.0",
     "express": "5.2.1",
     "jose": "^6.2.12",
     "pg": "^8.23.1"

@@ -165,6 +165,9 @@ jobs:
       - name: Test owner response history and access boundaries
         run: npm run test:owned-responses
 
+      - name: Test versioned XLSX export and owner boundaries
+        run: npm run test:export
+
       - name: Seed assessment fixtures and verify safe replay
         # Submission tests use a separate schema and leave these fixtures intact.
         run: |

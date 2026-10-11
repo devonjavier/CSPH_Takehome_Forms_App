@@ -26,7 +26,8 @@
     "typecheck": "npm run typecheck --workspaces",
     "lint": "eslint apps",
     "format:check": "prettier --check package.json tsconfig.base.json eslint.config.mjs apps",
-    "format": "prettier --write package.json tsconfig.base.json eslint.config.mjs apps"
+    "format": "prettier --write package.json tsconfig.base.json eslint.config.mjs apps",
+    "test:export": "npm run test:export --workspace @forms/api"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -42,5 +43,10 @@
   "dependencies": {
     "dotenv": "^18.0.6",
     "pg": "^8.23.1"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }

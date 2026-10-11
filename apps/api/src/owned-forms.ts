@@ -6,6 +6,7 @@ import { parseDraft } from "./contracts/draft.js";
 import { archiveForm, createDraft, saveDraft } from "./form-drafts.js";
 import { publishForm, unpublishForm } from "./publication.js";
 import { listOwnedResponses, readOwnedResponse } from "./owned-responses.js";
+import { buildResponseWorkbook } from "./response-export.js";
 
 // All management reads establish ownership in SQL, including direct UUID lookup.
 // Never reuse these projections for public forms: drafts are owner-only data.
@@ -20,6 +21,20 @@ export function createOwnedFormsRouter(pool: Pool): Router {
     response
       .status(201)
       .json({ form: await createDraft(pool, response.locals.user.id) });
+  });
+  router.get("/:formId/responses/export", async (request, response) => {
+    const formId = String(request.params.formId);
+    const workbook = await buildResponseWorkbook(
+      pool,
+      response.locals.user.id,
+      formId,
+    );
+    response.type(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    response.attachment(`form-${formId}-responses.xlsx`);
+    await workbook.xlsx.write(response);
+    response.end();
   });
   router.get("/:formId/responses", async (request, response) => {
     const pageValue = request.query.page ?? "0";
