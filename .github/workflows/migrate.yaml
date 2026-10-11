@@ -162,6 +162,9 @@ jobs:
       - name: Test public submissions and lifecycle races
         run: npm run test:responses
 
+      - name: Test owner response history and access boundaries
+        run: npm run test:owned-responses
+
       - name: Seed assessment fixtures and verify safe replay
         # Submission tests use a separate schema and leave these fixtures intact.
         run: |

@@ -22,6 +22,7 @@
     "test:forms": "npm run test:forms --workspace @forms/api",
     "test:publication": "npm run test:publication --workspace @forms/api",
     "test:responses": "npm run test:responses --workspace @forms/api",
+    "test:owned-responses": "npm run test:owned-responses --workspace @forms/api",
     "typecheck": "npm run typecheck --workspaces",
     "lint": "eslint apps",
     "format:check": "prettier --check package.json tsconfig.base.json eslint.config.mjs apps",
