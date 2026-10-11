@@ -142,6 +142,8 @@ export default function FormsPage() {
                     <Link href={`/forms/${form.id}/responses`}>
                       View responses
                     </Link>
+                    {" · "}
+                    <Link href={`/forms/${form.id}/webhook`}>Webhook</Link>
                   </p>
                 </li>
               ))}
