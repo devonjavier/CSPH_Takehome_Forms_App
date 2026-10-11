@@ -258,6 +258,12 @@ test("draft lifecycle over HTTP with real PostgreSQL", async (suite) => {
             ],
           },
           { ...edited, title: 123 },
+          { ...edited, title: "Bad\u0000title" },
+          { ...edited, description: "Bad\ud800description" },
+          {
+            ...edited,
+            questions: [{ ...edited.questions[0], label: "Bad\u0000label" }],
+          },
         ]) {
           assert.equal(
             (await request(`/forms/${surveyId}/draft`, "PUT", alpha, invalid))

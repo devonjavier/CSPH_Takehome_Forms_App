@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, json } from "express";
 import type { Pool } from "pg";
 import { HttpError } from "./errors.js";
 import { uuidPattern } from "./auth.js";
@@ -18,6 +18,10 @@ import {
 // Never reuse these projections for public forms: drafts are owner-only data.
 export function createOwnedFormsRouter(pool: Pool): Router {
   const router = Router();
+  // Publishing wraps the saved draft with an action ID. Reserve envelope space
+  // so a draft accepted at the save limit can also be published.
+  router.post("/:formId/publish", json({ limit: "257kb" }));
+  router.use(json({ limit: "256kb" }));
   router.param("formId", (_request, _response, next, value: string) => {
     if (!uuidPattern.test(value))
       throw new HttpError(404, "NOT_FOUND", "Form not found.");

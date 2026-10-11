@@ -174,6 +174,51 @@ test("publication transactions and public visibility in PostgreSQL", async (suit
     }
     const alpha = await login("owner.alpha@example.test");
     const beta = await login("owner.beta@example.test");
+    await suite.test(
+      "a draft at the save body limit remains publishable",
+      async () => {
+        const created = record(
+          await (await request("/forms", "POST", alpha)).json(),
+        );
+        const formId = String(record(created.form).id);
+        const definition: DraftDefinition = {
+          title: "Boundary size",
+          description: "",
+          questions: Array.from({ length: 3 }, () => ({
+            id: randomUUID(),
+            type: "dropdown",
+            label: "Choose",
+            required: false,
+            options: Array.from({ length: 80 }, (_, index) => ({
+              id: randomUUID(),
+              label: String(index).padStart(4, "0") + "x".repeat(996),
+            })),
+          })),
+        };
+        const padding =
+          256 * 1024 - 1 - Buffer.byteLength(JSON.stringify(definition));
+        assert.ok(padding > 0 && padding <= 10000);
+        definition.description = "x".repeat(padding);
+        assert.equal(
+          (await request(`/forms/${formId}/draft`, "PUT", alpha, definition))
+            .status,
+          204,
+        );
+        const publication = { publicationActionId: randomUUID(), definition };
+        assert.ok(Buffer.byteLength(JSON.stringify(publication)) > 256 * 1024);
+        assert.equal(
+          (
+            await request(
+              `/forms/${formId}/publish`,
+              "POST",
+              alpha,
+              publication,
+            )
+          ).status,
+          201,
+        );
+      },
+    );
     const draft = parseDraft(
       record(
         await (await request(`/forms/${surveyId}/draft`, "GET", alpha)).json(),

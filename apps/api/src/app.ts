@@ -47,7 +47,6 @@ export function createApp(pool: Pool, authConfig: AuthConfig) {
   app.use(
     "/forms",
     authenticate(pool, authConfig),
-    express.json({ limit: "256kb" }),
     createOwnedFormsRouter(pool),
   );
 

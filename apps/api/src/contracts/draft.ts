@@ -62,6 +62,9 @@ function record(value: unknown): Record<string, unknown> {
 function text(value: unknown, name: string, limit: number): string {
   if (typeof value !== "string" || value.length > limit)
     throw new Error(`${name} must be text with at most ${limit} characters.`);
+  // PostgreSQL JSONB cannot store NUL or unpaired UTF-16 surrogates.
+  if (value.includes("\u0000") || /[\uD800-\uDFFF]/u.test(value))
+    throw new Error(`${name} contains unsupported text characters.`);
   return value;
 }
 export function isQuestionType(value: unknown): value is QuestionType {
