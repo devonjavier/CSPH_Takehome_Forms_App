@@ -71,6 +71,20 @@ input {
 .builder {
   margin-top: 3vh;
 }
+.public-form {
+  margin-top: 3vh;
+  overflow-wrap: anywhere;
+}
+.form-description {
+  white-space: pre-wrap;
+}
+.public-form .checkbox-label {
+  min-height: 44px;
+}
+.public-form input[type="checkbox"],
+.public-form input[type="radio"] {
+  flex-shrink: 0;
+}
 .editor-fields {
   border: 0;
   padding: 0;

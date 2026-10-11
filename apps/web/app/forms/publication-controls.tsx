@@ -167,6 +167,11 @@ export function PublicationControls({
           <p>
             Public slug: <code>{publication.slug}</code>
           </p>
+          {publication.isPublished && (
+            <p>
+              <a href={`/f/${publication.slug}`}>Open public form</a>
+            </p>
+          )}
         </>
       ) : (
         <p>Loading publication status…</p>
