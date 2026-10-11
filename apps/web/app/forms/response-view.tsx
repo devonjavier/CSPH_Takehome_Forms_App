@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ApiError, requestApi } from "../api-client";
+import { ExportButton } from "./export-button";
 import {
   readResponseDetail,
   readResponseListing,
@@ -84,6 +85,7 @@ export function ResponseView({
             {listing.total} {listing.total === 1 ? "response" : "responses"}
           </p>
           <button onClick={() => reload(0)}>Refresh responses</button>
+          <ExportButton formId={formId} />
           {listing.total === 0 ? (
             <p className="notice">No responses yet.</p>
           ) : (
