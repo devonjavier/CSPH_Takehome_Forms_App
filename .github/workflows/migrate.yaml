@@ -7,6 +7,7 @@ on:
       - 'database/**'
       - 'apps/api/**'
       - 'apps/web/**'
+      - 'apps/webhook-consumer/**'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.base.json'
@@ -18,6 +19,7 @@ on:
       - 'database/**'
       - 'apps/api/**'
       - 'apps/web/**'
+      - 'apps/webhook-consumer/**'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.base.json'
@@ -138,8 +140,16 @@ jobs:
       - name: Install application dependencies
         run: npm ci
 
-      - name: Typecheck API and database tests
-        run: npm run typecheck --workspace @forms/api
+      - name: Typecheck all apps and tests
+        run: npm run typecheck
+
+      - name: Check lint and formatting
+        run: |
+          npm run lint
+          npm run format:check
+
+      - name: Build all applications
+        run: npm run build
 
       - name: Test API database transactions and readiness
         run: npm run test:db
@@ -167,6 +177,12 @@ jobs:
 
       - name: Test versioned XLSX export and owner boundaries
         run: npm run test:export
+
+      - name: Test webhook delivery and failure isolation
+        run: npm run test:webhooks
+
+      - name: Test webhook consumer validation and display
+        run: npm run test:consumer
 
       - name: Seed assessment fixtures and verify safe replay
         # Submission tests use a separate schema and leave these fixtures intact.

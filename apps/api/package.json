@@ -16,7 +16,8 @@
     "test:publication": "node --env-file-if-exists=.env --import tsx --test test/publication.test.ts",
     "test:responses": "node --env-file-if-exists=.env --import tsx --test test/responses.test.ts",
     "test:owned-responses": "node --env-file-if-exists=.env --import tsx --test test/owned-responses.test.ts",
-    "test:export": "node --env-file-if-exists=.env --import tsx --test test/response-export.test.ts"
+    "test:export": "node --env-file-if-exists=.env --import tsx --test test/response-export.test.ts",
+    "test:webhooks": "node --env-file-if-exists=.env --import tsx --test test/webhooks.test.ts"
   },
   "dependencies": {
     "cookie": "^1.1.1",

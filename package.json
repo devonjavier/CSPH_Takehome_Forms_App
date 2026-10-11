@@ -10,6 +10,7 @@
     "npm": ">=11 <12"
   },
   "scripts": {
+    "test": "npm run test:db && npm run test:seed && npm run test:auth && npm run test:forms && npm run test:publication && npm run test:responses && npm run test:owned-responses && npm run test:export && npm run test:webhooks && npm run test:consumer && npm run test:network --workspace @forms/web",
     "dev": "concurrently --kill-others --names api,web,consumer \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:consumer\"",
     "dev:api": "npm run dev --workspace @forms/api",
     "dev:web": "npm run dev --workspace @forms/web",
@@ -27,7 +28,9 @@
     "lint": "eslint apps",
     "format:check": "prettier --check package.json tsconfig.base.json eslint.config.mjs apps",
     "format": "prettier --write package.json tsconfig.base.json eslint.config.mjs apps",
-    "test:export": "npm run test:export --workspace @forms/api"
+    "test:export": "npm run test:export --workspace @forms/api",
+    "test:webhooks": "npm run test:webhooks --workspace @forms/api",
+    "test:consumer": "npm run test --workspace @forms/webhook-consumer"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
