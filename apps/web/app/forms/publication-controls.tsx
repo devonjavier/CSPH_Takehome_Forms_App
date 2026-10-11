@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { DraftDefinition } from "../../../api/src/contracts/draft";
 import { ApiError, isRecord, requestApi } from "../api-client";
 
@@ -56,6 +56,17 @@ export function PublicationControls({
   const [notice, setNotice] = useState("");
   const [attempt, setAttempt] = useState(0);
   const inFlight = useRef(false);
+  const publicationHintId = useId();
+  let publishDisabledReason = "";
+  if (hasUnsavedChanges) {
+    publishDisabledReason = "Save your draft changes before publishing.";
+  } else if (busy) {
+    publishDisabledReason = "Wait for the current operation to finish.";
+  } else if (!publication) {
+    publishDisabledReason = error
+      ? "Refresh publication status before publishing."
+      : "Wait for publication status to load.";
+  }
   useEffect(() => {
     const controller = new AbortController();
     requestApi(`/forms/${formId}/publication`, { signal: controller.signal })
@@ -175,7 +186,11 @@ export function PublicationControls({
         </div>
       )}
       {notice && <p role="status">{notice}</p>}
-      {hasUnsavedChanges && <p>Save your draft changes before publishing.</p>}
+      {publishDisabledReason && (
+        <p id={publicationHintId} role="status">
+          {publishDisabledReason}
+        </p>
+      )}
       {pending ? (
         <>
           <p>
@@ -197,6 +212,10 @@ export function PublicationControls({
           <div className="actions">
             <button
               disabled={busy || hasUnsavedChanges}
+              title={publishDisabledReason || undefined}
+              aria-describedby={
+                publishDisabledReason ? publicationHintId : undefined
+              }
               onClick={() =>
                 publish({
                   publicationActionId: crypto.randomUUID(),
@@ -229,8 +248,13 @@ export function PublicationControls({
       ) : (
         <div className="actions">
           <button
-            disabled={busy || hasUnsavedChanges || !publication}
+            aria-disabled={Boolean(publishDisabledReason)}
+            aria-describedby={
+              publishDisabledReason ? publicationHintId : undefined
+            }
+            title={publishDisabledReason || undefined}
             onClick={() => {
+              if (publishDisabledReason) return;
               setNotice("");
               setConfirmation("publish");
             }}
