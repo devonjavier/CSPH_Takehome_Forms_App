@@ -31,6 +31,28 @@ export type DraftDefinition = {
   description: string | null;
   questions: DraftQuestion[];
 };
+export type PublicForm = DraftDefinition & {
+  formVersionId: string;
+  versionNumber: number;
+};
+// Published definitions share the question configuration shape with drafts,
+// but their IDs are immutable relational identities generated at publication.
+export function parsePublicForm(value: unknown): PublicForm {
+  const form = record(value);
+  if (
+    typeof form.formVersionId !== "string" ||
+    !uuid.test(form.formVersionId) ||
+    typeof form.versionNumber !== "number" ||
+    !Number.isSafeInteger(form.versionNumber) ||
+    form.versionNumber < 1
+  )
+    throw new Error("Could not read the published version.");
+  return {
+    ...parseDraft(form),
+    formVersionId: form.formVersionId.toLowerCase(),
+    versionNumber: form.versionNumber,
+  };
+}
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
