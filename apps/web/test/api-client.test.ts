@@ -1,6 +1,52 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { requestApi } from "../app/api-client.ts";
+import { ApiError, requestApi } from "../app/api-client.ts";
+
+test("submission errors retain safe field and stale-version codes for the UI", async (context) => {
+  const fetchMock = context.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "INVALID_SUBMISSION",
+            message: "Answer this required question.",
+            field: "question-id",
+          },
+        }),
+        { status: 400 },
+      ),
+  );
+  await assert.rejects(
+    requestApi("/public/forms/example/responses"),
+    (error: unknown) => {
+      assert.ok(error instanceof ApiError);
+      assert.equal(error.field, "question-id");
+      assert.equal(error.code, "INVALID_SUBMISSION");
+      assert.equal(error.status, 400);
+      return true;
+    },
+  );
+  fetchMock.mock.mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { code: "FORM_UPDATED", message: "Please refresh." },
+        }),
+        { status: 409 },
+      ),
+  );
+  await assert.rejects(
+    requestApi("/public/forms/example/responses"),
+    (error: unknown) => {
+      assert.ok(error instanceof ApiError);
+      assert.equal(error.code, "FORM_UPDATED");
+      assert.equal(error.status, 409);
+      return true;
+    },
+  );
+});
 
 test("disconnection and truncated bodies reject; retry succeeds", async (context) => {
   const fetchMock = context.mock.method(globalThis, "fetch", async () => {

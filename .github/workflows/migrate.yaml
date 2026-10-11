@@ -159,7 +159,11 @@ jobs:
       - name: Test publication transactions and public visibility
         run: npm run test:publication
 
+      - name: Test public submissions and lifecycle races
+        run: npm run test:responses
+
       - name: Seed assessment fixtures and verify safe replay
+        # Submission tests use a separate schema and leave these fixtures intact.
         run: |
           npm run seed
           npm run seed

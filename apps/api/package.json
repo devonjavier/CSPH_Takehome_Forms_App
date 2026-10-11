@@ -13,7 +13,8 @@
     "test:seed": "node --env-file-if-exists=.env --import tsx --test test/seed.test.ts",
     "test:auth": "node --env-file-if-exists=.env --import tsx --test test/auth.test.ts",
     "test:forms": "node --env-file-if-exists=.env --import tsx --test test/forms.test.ts",
-    "test:publication": "node --env-file-if-exists=.env --import tsx --test test/publication.test.ts"
+    "test:publication": "node --env-file-if-exists=.env --import tsx --test test/publication.test.ts",
+    "test:responses": "node --env-file-if-exists=.env --import tsx --test test/responses.test.ts"
   },
   "dependencies": {
     "cookie": "^1.1.1",
