@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { drainWebhooks } from "../src/webhooks.js";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { readdir, readFile } from "node:fs/promises";
@@ -541,7 +542,7 @@ test("public submissions validate and commit atomically in PostgreSQL", async (s
                 await waitForLock("SELECT id FROM forms WHERE id=");
                 const submitting = request(body, slug);
                 await waitForLock(
-                  "SELECT current_version_id,is_published,deleted_at FROM forms",
+                  "SELECT id,current_version_id,is_published,deleted_at FROM forms",
                 );
                 await blocker.query("COMMIT");
                 await mutation;
@@ -593,6 +594,7 @@ test("public submissions validate and commit atomically in PostgreSQL", async (s
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
+    await drainWebhooks(pool);
     await pool.end();
     await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
     await admin.end();

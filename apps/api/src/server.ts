@@ -1,6 +1,7 @@
 import { createApp } from "./app.js";
 import { createDatabasePool } from "./database.js";
 import { readAuthConfig } from "./auth.js";
+import { drainWebhooks } from "./webhooks.js";
 
 const port = Number(process.env.PORT ?? "4000");
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -31,8 +32,8 @@ async function startServer() {
     deadline.unref();
     // Drain HTTP requests first: in-flight operations may still need the pool.
     server.close(() => {
-      void pool
-        .end()
+      void drainWebhooks(pool)
+        .then(() => pool.end())
         .then(() => {
           clearTimeout(deadline);
           process.exitCode = exitCode;

@@ -4,6 +4,7 @@ import { HttpError } from "./errors.js";
 import { readPublicForm } from "./public-definition.js";
 import { validateAnswers, type Submission } from "./contracts/submission.js";
 import { parsePublicForm } from "./contracts/draft.js";
+import type { WebhookConfig, WebhookJob } from "./webhooks.js";
 
 export function submitResponse(
   pool: Pool,
@@ -14,11 +15,12 @@ export function submitResponse(
     // Same root lock as publish/unpublish/archive. Whichever transaction gets
     // the lock first completes before the next rechecks visibility and version.
     const locked = await client.query<{
+      id: string;
       current_version_id: string | null;
       is_published: boolean;
       deleted_at: Date | null;
     }>(
-      "SELECT current_version_id,is_published,deleted_at FROM forms WHERE slug=$1 FOR UPDATE",
+      "SELECT id,current_version_id,is_published,deleted_at FROM forms WHERE slug=$1 FOR UPDATE",
       [slug],
     );
     const form = locked.rows[0];
@@ -68,7 +70,57 @@ export function submitResponse(
         );
       }
     }
-    // Resolves only after COMMIT. Future webhook delivery belongs outside here.
-    return response;
+    // Snapshot configuration under the same form lock used by settings mutations.
+    // A later edit/archive cannot retarget this already accepted submission.
+    const config = (
+      await client.query<WebhookConfig>(
+        "SELECT url,secret FROM form_webhooks WHERE form_id=$1",
+        [form.id],
+      )
+    ).rows[0];
+    let webhook: WebhookJob | null = null;
+    if (config) {
+      const payloadAnswers = definition.questions.map((question) => {
+        const answer = answers.find(
+          (answer) => answer.questionId === question.id,
+        );
+        if (!answer) throw new Error("Missing validated answer.");
+        let value: string | number | string[] | null = answer.value;
+        if (Array.isArray(answer.value) && "options" in question) {
+          const labels = answer.value.map((id) => {
+            const option = question.options.find((option) => option.id === id);
+            if (!option) throw new Error("Missing validated option.");
+            return option.label;
+          });
+          value =
+            question.type === "dropdown" || question.type === "multiple_choice"
+              ? (labels[0] ?? null)
+              : labels;
+        }
+        return {
+          questionId: question.id,
+          label: question.label,
+          type: question.type,
+          value,
+        };
+      });
+      webhook = {
+        ...config,
+        responseId: response.id,
+        payload: {
+          form: {
+            id: form.id,
+            title: definition.title,
+            formVersionId: submission.formVersionId,
+          },
+          response: {
+            ...response,
+            email: submission.email,
+            answers: payloadAnswers,
+          },
+        },
+      };
+    }
+    return { response, webhook };
   });
 }

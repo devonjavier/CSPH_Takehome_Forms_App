@@ -7,6 +7,12 @@ import { archiveForm, createDraft, saveDraft } from "./form-drafts.js";
 import { publishForm, unpublishForm } from "./publication.js";
 import { listOwnedResponses, readOwnedResponse } from "./owned-responses.js";
 import { buildResponseWorkbook } from "./response-export.js";
+import {
+  parseWebhook,
+  readWebhook,
+  saveWebhook,
+  removeWebhook,
+} from "./webhooks.js";
 
 // All management reads establish ownership in SQL, including direct UUID lookup.
 // Never reuse these projections for public forms: drafts are owner-only data.
@@ -21,6 +27,34 @@ export function createOwnedFormsRouter(pool: Pool): Router {
     response
       .status(201)
       .json({ form: await createDraft(pool, response.locals.user.id) });
+  });
+  router.get("/:formId/webhook", async (request, response) => {
+    response.json({
+      webhook: await readWebhook(
+        pool,
+        response.locals.user.id,
+        String(request.params.formId),
+      ),
+    });
+  });
+  router.put("/:formId/webhook", async (request, response) => {
+    if (!request.is("application/json"))
+      throw new HttpError(415, "JSON_REQUIRED", "Send application/json.");
+    await saveWebhook(
+      pool,
+      response.locals.user.id,
+      String(request.params.formId),
+      parseWebhook(request.body),
+    );
+    response.status(204).end();
+  });
+  router.delete("/:formId/webhook", async (request, response) => {
+    await removeWebhook(
+      pool,
+      response.locals.user.id,
+      String(request.params.formId),
+    );
+    response.status(204).end();
   });
   router.get("/:formId/responses/export", async (request, response) => {
     const formId = String(request.params.formId);

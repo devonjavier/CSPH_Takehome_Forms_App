@@ -4,6 +4,7 @@ import type { Pool } from "pg";
 import { HttpError } from "./errors.js";
 import { submitResponse } from "./responses.js";
 import { parseSubmission, SubmissionError } from "./contracts/submission.js";
+import { scheduleWebhook } from "./webhooks.js";
 
 export function createPublicFormsRouter(pool: Pool): Router {
   const router = Router();
@@ -23,7 +24,8 @@ export function createPublicFormsRouter(pool: Pool): Router {
           request.params.slug,
           submission,
         );
-        response.status(201).json({ response: result });
+        response.status(201).json({ response: result.response });
+        scheduleWebhook(pool, result.webhook);
       } catch (error) {
         if (error instanceof SubmissionError)
           throw new HttpError(
