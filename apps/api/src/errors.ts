@@ -5,6 +5,7 @@ export class HttpError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly field?: string,
   ) {
     super(message);
   }
@@ -21,9 +22,13 @@ export const handleError: ErrorRequestHandler = (
     return;
   }
   if (error instanceof HttpError) {
-    response
-      .status(error.status)
-      .json({ error: { code: error.code, message: error.message } });
+    response.status(error.status).json({
+      error: {
+        code: error.code,
+        message: error.message,
+        ...(error.field ? { field: error.field } : {}),
+      },
+    });
     return;
   }
   if (typeof error === "object" && error !== null && "type" in error) {
