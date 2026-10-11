@@ -75,6 +75,45 @@ input {
   margin-top: 3vh;
   overflow-wrap: anywhere;
 }
+.response-page {
+  margin-top: 3vh;
+  overflow-wrap: anywhere;
+}
+.response-text {
+  white-space: pre-wrap;
+}
+.response-table-scroll {
+  position: relative;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+.response-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 35rem;
+  background: white;
+}
+.response-table th,
+.response-table td {
+  text-align: left;
+  padding: 0.8rem;
+  border-bottom: 1px solid #d5d9e0;
+}
+.response-table caption {
+  text-align: left;
+  padding: 0.5rem 0;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 .form-description {
   white-space: pre-wrap;
 }

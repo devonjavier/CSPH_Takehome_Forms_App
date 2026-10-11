@@ -138,6 +138,11 @@ export default function FormsPage() {
                     <Link href={`/forms/${form.id}`}>{form.title}</Link>
                   </h2>
                   <span>{form.isPublished ? "Published" : "Draft"}</span>
+                  <p>
+                    <Link href={`/forms/${form.id}/responses`}>
+                      View responses
+                    </Link>
+                  </p>
                 </li>
               ))}
             </ul>
