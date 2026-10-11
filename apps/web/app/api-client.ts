@@ -2,6 +2,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly code?: string,
+    public readonly field?: string,
   ) {
     super(message);
   }
@@ -42,7 +44,13 @@ export async function requestApi(
       typeof body.error.message === "string"
     )
       message = body.error.message;
-    throw new ApiError(response.status, message);
+    const details = isRecord(body) && isRecord(body.error) ? body.error : {};
+    throw new ApiError(
+      response.status,
+      message,
+      typeof details.code === "string" ? details.code : undefined,
+      typeof details.field === "string" ? details.field : undefined,
+    );
   }
   return body;
 }
