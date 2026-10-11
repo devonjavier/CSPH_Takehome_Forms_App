@@ -5,6 +5,7 @@ import { uuidPattern } from "./auth.js";
 import { parseDraft } from "./contracts/draft.js";
 import { archiveForm, createDraft, saveDraft } from "./form-drafts.js";
 import { publishForm, unpublishForm } from "./publication.js";
+import { listOwnedResponses, readOwnedResponse } from "./owned-responses.js";
 
 // All management reads establish ownership in SQL, including direct UUID lookup.
 // Never reuse these projections for public forms: drafts are owner-only data.
@@ -19,6 +20,36 @@ export function createOwnedFormsRouter(pool: Pool): Router {
     response
       .status(201)
       .json({ form: await createDraft(pool, response.locals.user.id) });
+  });
+  router.get("/:formId/responses", async (request, response) => {
+    const pageValue = request.query.page ?? "0";
+    if (typeof pageValue !== "string" || !/^\d{1,7}$/.test(pageValue))
+      throw new HttpError(
+        400,
+        "INVALID_PAGE",
+        "Page must be a nonnegative integer of at most seven digits.",
+      );
+    response.json(
+      await listOwnedResponses(
+        pool,
+        response.locals.user.id,
+        String(request.params.formId),
+        Number(pageValue),
+      ),
+    );
+  });
+  router.get("/:formId/responses/:responseId", async (request, response) => {
+    const responseId = String(request.params.responseId);
+    if (!uuidPattern.test(responseId))
+      throw new HttpError(404, "NOT_FOUND", "Response not found.");
+    response.json({
+      response: await readOwnedResponse(
+        pool,
+        response.locals.user.id,
+        String(request.params.formId),
+        responseId,
+      ),
+    });
   });
   router.get("/:formId/publication", async (request, response) => {
     const result = await pool.query(
