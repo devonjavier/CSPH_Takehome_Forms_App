@@ -50,10 +50,25 @@ export function parseSubmission(value: unknown): Submission {
   if (typeof value.email !== "string")
     throw new SubmissionError("Enter a valid email address.", "email");
   const email = value.email.trim().toLowerCase();
+  const parts = email.split("@");
+  const local = parts[0] ?? "";
+  const domainLabels = (parts[1] ?? "").split(".");
+  // Practical mailbox syntax: ASCII dot-atom local part and DNS labels.
+  // This checks syntax only; no network lookup or mailbox verification.
   if (
     email.length > 254 ||
     !validText(email) ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    /\p{Cc}/u.test(value.email) ||
+    parts.length !== 2 ||
+    local.length > 64 ||
+    !/^[a-z0-9!#$%&'*+/=?^_`{|}~.-]+$/.test(local) ||
+    local.startsWith(".") ||
+    local.endsWith(".") ||
+    local.includes("..") ||
+    domainLabels.length < 2 ||
+    domainLabels.some(
+      (label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label),
+    )
   )
     throw new SubmissionError("Enter a valid email address.", "email");
   const seen = new Set<string>();

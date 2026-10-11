@@ -179,6 +179,24 @@ test("public submissions validate and commit atomically in PostgreSQL", async (s
       },
     );
     await suite.test(
+      "email normalization and plus-addressing remain valid",
+      async () => {
+        for (const email of [
+          "  Person+survey@Example.test  ",
+          "first.last@my-domain.example.test",
+        ]) {
+          const result = await request({ ...valid, email });
+          assert.equal(result.status, 201);
+          const id = record(record(await result.json()).response).id;
+          const stored = await pool.query(
+            "SELECT email FROM responses WHERE id=$1",
+            [id],
+          );
+          assert.equal(stored.rows[0].email, email.trim().toLowerCase());
+        }
+      },
+    );
+    await suite.test(
       "optional omissions/null/empty values store null rows without selections",
       async () => {
         for (const blank of [null, "", " \t", []]) {
@@ -248,6 +266,20 @@ test("public submissions validate and commit atomically in PostgreSQL", async (s
         const before = await counts();
         const invalid: unknown[] = [
           { ...valid, email: "bad-email" },
+          ...[
+            "a@example..com",
+            "a@-example.com",
+            "a@example-.com",
+            "a@exam\u0001ple.com",
+            "a@exam\u007fple.com",
+            "a@exam\u0085ple.com",
+            ".a@example.com",
+            "a..b@example.com",
+            "a.@example.com",
+            "a@exa_mple.com",
+            `a@${"x".repeat(64)}.com`,
+            `${"a".repeat(65)}@example.com`,
+          ].map((email) => ({ ...valid, email })),
           { ...valid, email: "nul\u0000@example.test" },
           { ...valid, formVersionId: "bad" },
           { ...valid, answers: [...valid.answers, valid.answers[0]] },

@@ -61,6 +61,21 @@ export function PublicFormPage({ slug }: { slug: string }) {
     inFlight.current = true;
     setBusy(true);
     try {
+      // Native number/date inputs expose an empty value for incomplete entries
+      // such as '-' or a partial date. Check before normalizing optional blanks.
+      for (const question of form.questions) {
+        const input = event.currentTarget.elements.namedItem(
+          `answer-${question.id}`,
+        );
+        if (input instanceof HTMLInputElement && input.validity.badInput) {
+          throw new SubmissionError(
+            question.type === "date"
+              ? "Enter a complete, valid date."
+              : "Enter a complete, valid number.",
+            question.id,
+          );
+        }
+      }
       const submission = parseSubmission({
         formVersionId: form.formVersionId,
         email,

@@ -555,6 +555,14 @@ duplicate/unknown questions, foreign or historical options, invalid dates and
 out-of-range scales return `400 INVALID_SUBMISSION` with a safe `field` identifier.
 All browser mutations require the configured WEB_ORIGIN as their Origin header.
 
+Respondent email uses practical ASCII mailbox syntax: a dot-atom local part (up to
+64 characters, plus-addressing allowed) and at least two DNS-style domain labels
+(each up to 63 characters, no leading/trailing hyphen). Control characters, empty
+labels and consecutive local-part dots are rejected. Punycode domains are accepted;
+quoted mailboxes and Unicode mailbox syntax are not supported. This is syntax
+validation, not a DNS or mailbox-existence check. Incomplete browser number/date
+entries show field errors rather than silently becoming optional blanks.
+
 Submission locks the form row used by publish/unpublish/archive, then rechecks
 visibility and the current version. Responses, answers and selections commit as one
 transaction. A newer version returns `409 FORM_UPDATED`; offline or archived forms

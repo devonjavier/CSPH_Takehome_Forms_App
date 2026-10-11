@@ -47,7 +47,7 @@ export function ResponseInput({
           min="0001-01-01"
           max="9999-12-31"
           value={text}
-          onChange={(event) => onChange(event.target.value)}
+          onInput={(event) => onChange(event.currentTarget.value)}
         />
       );
     case "linear_scale":
@@ -64,7 +64,7 @@ export function ResponseInput({
             min={question.min ?? undefined}
             max={question.max ?? undefined}
             value={text}
-            onChange={(event) => onChange(event.target.value)}
+            onInput={(event) => onChange(event.currentTarget.value)}
           />
         </>
       );
