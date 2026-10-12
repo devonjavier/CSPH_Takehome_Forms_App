@@ -369,6 +369,31 @@ button[aria-disabled="true"] {
   accent-color: #3730a3;
 }
 @media (max-width: 600px) {
+  .site-header {
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .site-header .account-menu {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
+    margin-left: 0;
+    gap: 0.75rem 1rem;
+  }
+  .site-header .account-identity {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    font-size: 0.875rem;
+  }
+  .site-header .account-menu > a {
+    justify-self: start;
+  }
+  .site-header .account-menu > button {
+    justify-self: end;
+  }
+  .site-header .account-menu > .error {
+    grid-column: 1 / -1;
+  }
   .linear-scale {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
