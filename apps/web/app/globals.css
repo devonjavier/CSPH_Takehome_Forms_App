@@ -228,3 +228,20 @@ button[aria-disabled="true"] {
     padding: 1.25rem;
   }
 }
+.multi-select {
+  border: 1px solid #8b95a5;
+  border-radius: 0.4rem;
+  background: white;
+}
+.multi-select summary {
+  min-height: 44px;
+  padding: 0.75rem;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.multi-select-options {
+  padding: 0 0.75rem 0.75rem;
+  max-height: 20rem;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}

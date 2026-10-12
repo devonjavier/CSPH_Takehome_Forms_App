@@ -1,4 +1,5 @@
 import type { DraftQuestion } from "../../../api/src/contracts/draft";
+import { useEffect, useRef } from "react";
 
 export function ResponseInput({
   question,
@@ -11,6 +12,26 @@ export function ResponseInput({
   error: string;
   onChange: (value: string | string[]) => void;
 }) {
+  const dropdown = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (question.type !== "multi_select") return;
+    const dismissOutside = (event: Event) => {
+      if (
+        event.target instanceof Node &&
+        !dropdown.current?.contains(event.target) &&
+        dropdown.current
+      )
+        dropdown.current.open = false;
+    };
+    // Pointer events distinguish an option-label click from leaving the control;
+    // closing on blur alone can hide a label before it toggles its checkbox.
+    document.addEventListener("pointerdown", dismissOutside);
+    document.addEventListener("focusin", dismissOutside);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside);
+      document.removeEventListener("focusin", dismissOutside);
+    };
+  }, [question.type]);
   const text = typeof value === "string" ? value : "";
   const common = {
     id: `answer-${question.id}`,
@@ -107,11 +128,60 @@ export function ResponseInput({
           )}
         </>
       );
-    case "multi_select":
+    case "multi_select": {
+      const selected = Array.isArray(value) ? value : [];
+      return (
+        <details
+          ref={dropdown}
+          className="multi-select"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.currentTarget.open = false;
+              event.currentTarget.querySelector("summary")?.focus();
+            }
+          }}
+        >
+          <summary
+            {...common}
+            aria-label={`${question.label}: ${selected.length} selected`}
+          >
+            {selected.length ? `${selected.length} selected` : "Choose options"}
+          </summary>
+          <div className="multi-select-options">
+            <p className="hint">
+              Select all that apply. Escape closes this dropdown.
+            </p>
+            {question.options.map((option) => (
+              <label className="checkbox-label" key={option.id}>
+                <input
+                  type="checkbox"
+                  value={option.id}
+                  checked={selected.includes(option.id)}
+                  onChange={(event) =>
+                    onChange(
+                      event.target.checked
+                        ? [...selected, option.id]
+                        : selected.filter((id) => id !== option.id),
+                    )
+                  }
+                  aria-describedby={common["aria-describedby"]}
+                />
+                {option.label}
+              </label>
+            ))}
+            <button
+              type="button"
+              disabled={!selected.length}
+              onClick={() => onChange([])}
+            >
+              Clear selections
+            </button>
+          </div>
+        </details>
+      );
+    }
     case "checkboxes": {
       const selected = Array.isArray(value) ? value : [];
-      // Checkboxes give both multiple-selection types usable phone controls
-      // without requiring Ctrl/Command clicks in a native multi-select list.
       return (
         <>
           <p className="hint">Select all that apply.</p>
