@@ -42,6 +42,8 @@ export function DraftEditor({ formId }: { formId: string }) {
   const router = useRouter();
   const [draft, setDraft] = useState<DraftDefinition | null>(null);
   const [saved, setSaved] = useState("");
+  const [etag, setETag] = useState("");
+  const [conflict, setConflict] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -54,6 +56,10 @@ export function DraftEditor({ formId }: { formId: string }) {
         if (controller.signal.aborted) return;
         if (!isRecord(result)) throw new Error("Could not load the draft.");
         const definition = parseDraft(result.definition);
+        if (typeof result.etag !== "string")
+          throw new Error("Could not read the draft revision.");
+        setETag(result.etag);
+        setConflict(false);
         setDraft(definition);
         setSaved(JSON.stringify(definition));
       })
@@ -67,6 +73,9 @@ export function DraftEditor({ formId }: { formId: string }) {
               ? failure.message
               : "Could not load the draft.",
           );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setBusy(false);
       });
     return () => controller.abort();
   }, [formId, router, attempt]);
@@ -93,14 +102,21 @@ export function DraftEditor({ formId }: { formId: string }) {
     setError("");
     try {
       const definition = parseDraft(draft);
-      await requestApi(`/forms/${formId}/draft`, {
+      const result = await requestApi(`/forms/${formId}/draft`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "If-Match": etag },
         body: JSON.stringify(definition),
       });
+      if (!isRecord(result) || typeof result.etag !== "string")
+        throw new Error(
+          "Could not read the saved draft revision. Reload before saving again.",
+        );
+      setETag(result.etag);
       setDraft(definition);
       setSaved(JSON.stringify(definition));
     } catch (failure) {
+      if (failure instanceof ApiError && failure.code === "DRAFT_CHANGED")
+        setConflict(true);
       setError(
         failure instanceof Error
           ? failure.message
@@ -147,6 +163,24 @@ export function DraftEditor({ formId }: { formId: string }) {
       {error && (
         <div role="alert" className="error">
           <p>{error}</p>
+          {conflict && (
+            <button
+              disabled={busy}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Discard your local edits and load the latest saved draft?",
+                  )
+                ) {
+                  setError("");
+                  setBusy(true);
+                  setAttempt(attempt + 1);
+                }
+              }}
+            >
+              Reload saved draft
+            </button>
+          )}
           {!draft && (
             <button
               onClick={() => {
@@ -470,7 +504,7 @@ export function DraftEditor({ formId }: { formId: string }) {
           <PublicationControls
             formId={formId}
             definition={draft}
-            hasUnsavedChanges={dirty}
+            hasUnsavedChanges={dirty || conflict}
             busy={busy}
             onBusyChange={setBusy}
           />

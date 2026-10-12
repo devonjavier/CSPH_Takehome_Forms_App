@@ -1,3 +1,4 @@
+import { draftETag } from "../src/form-drafts.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
@@ -186,6 +187,7 @@ test("owner response reads preserve history and access boundaries", async (suite
             )
           ).rows[0].definition,
         );
+        const expectedETag = draftETag(draft);
         draft.title = "Changed title";
         draft.questions = draft.questions
           .slice(0, 5)
@@ -202,7 +204,7 @@ test("owner response reads preserve history and access boundaries", async (suite
               };
             return { ...question, label: `Changed ${question.label}` };
           });
-        await saveDraft(pool, fixtureId("alpha"), formId, draft);
+        await saveDraft(pool, fixtureId("alpha"), formId, draft, expectedETag);
         await publishForm(
           pool,
           fixtureId("alpha"),

@@ -3,7 +3,12 @@ import type { Pool } from "pg";
 import { HttpError } from "./errors.js";
 import { uuidPattern } from "./auth.js";
 import { parseDraft } from "./contracts/draft.js";
-import { archiveForm, createDraft, saveDraft } from "./form-drafts.js";
+import {
+  archiveForm,
+  createDraft,
+  saveDraft,
+  draftETag,
+} from "./form-drafts.js";
 import { publishForm, unpublishForm } from "./publication.js";
 import { listOwnedResponses, readOwnedResponse } from "./owned-responses.js";
 import { buildResponseWorkbook } from "./response-export.js";
@@ -167,7 +172,9 @@ export function createOwnedFormsRouter(pool: Pool): Router {
     );
     if (!result.rows[0])
       throw new HttpError(404, "NOT_FOUND", "Form not found.");
-    response.json({ definition: parseDraft(result.rows[0].definition) });
+    const definition = parseDraft(result.rows[0].definition);
+    const etag = draftETag(definition);
+    response.set("ETag", etag).json({ definition, etag });
   });
   router.put("/:formId/draft", async (request, response) => {
     if (!request.is("application/json"))
@@ -187,8 +194,10 @@ export function createOwnedFormsRouter(pool: Pool): Router {
       response.locals.user.id,
       String(request.params.formId),
       definition,
+      request.get("If-Match"),
     );
-    response.status(204).end();
+    const etag = draftETag(definition);
+    response.set("ETag", etag).json({ etag });
   });
   router.delete("/:formId", async (request, response) => {
     await archiveForm(

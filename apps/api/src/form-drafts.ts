@@ -1,7 +1,14 @@
 import type { Pool, PoolClient } from "pg";
-import type { DraftDefinition } from "./contracts/draft.js";
+import { createHash } from "node:crypto";
+import { parseDraft, type DraftDefinition } from "./contracts/draft.js";
 import { withTransaction } from "./database.js";
 import { HttpError } from "./errors.js";
+
+export function draftETag(definition: DraftDefinition): string {
+  return `"${createHash("sha256")
+    .update(JSON.stringify(parseDraft(definition)))
+    .digest("hex")}"`;
+}
 
 export async function lockOwnedForm(
   client: PoolClient,
@@ -36,9 +43,27 @@ export function saveDraft(
   ownerId: string,
   formId: string,
   definition: DraftDefinition,
+  expectedETag: string | undefined,
 ) {
   return withTransaction(pool, async (client) => {
     await lockOwnedForm(client, formId, ownerId);
+    if (!expectedETag || !/^"[a-f0-9]{64}"$/.test(expectedETag))
+      throw new HttpError(
+        428,
+        "DRAFT_PRECONDITION_REQUIRED",
+        "Load the draft before saving it.",
+      );
+    const stored = await client.query<{ definition: unknown }>(
+      "SELECT definition FROM form_drafts WHERE form_id=$1",
+      [formId],
+    );
+    const currentETag = draftETag(parseDraft(stored.rows[0]?.definition));
+    if (currentETag !== expectedETag)
+      throw new HttpError(
+        409,
+        "DRAFT_CHANGED",
+        "This draft changed in another tab. Your edits are still here. Reload the saved draft before editing again.",
+      );
     await client.query(
       "UPDATE form_drafts SET definition=$2,updated_at=clock_timestamp() WHERE form_id=$1",
       [formId, JSON.stringify(definition)],

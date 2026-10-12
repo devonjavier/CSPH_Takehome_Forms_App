@@ -1,5 +1,7 @@
+import { draftETag } from "../src/form-drafts.js";
 import assert from "node:assert/strict";
 import { drainWebhooks } from "../src/webhooks.js";
+import { submitResponse } from "../src/responses.js";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { readdir, readFile } from "node:fs/promises";
@@ -499,7 +501,13 @@ test("public submissions validate and commit atomically in PostgreSQL", async (s
           `${operation} race: ${submissionFirst ? "submission" : "mutation"} gets the lock first`,
           async () => {
             const created = await createDraft(pool, ownerId);
-            await saveDraft(pool, ownerId, created.id, draft);
+            await saveDraft(
+              pool,
+              ownerId,
+              created.id,
+              draft,
+              draftETag({ title: "", description: null, questions: [] }),
+            );
             await publishForm(pool, ownerId, created.id, randomUUID(), draft);
             const slug = (
               await pool.query("SELECT slug FROM forms WHERE id=$1", [

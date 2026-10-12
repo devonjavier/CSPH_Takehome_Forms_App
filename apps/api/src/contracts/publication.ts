@@ -21,6 +21,14 @@ export function validatePublication(value: unknown): DraftDefinition {
         throw new Error(`${name} has a blank option label.`);
       if (new Set(labels).size !== labels.length)
         throw new Error(`${name} needs distinct option labels after trimming.`);
+      // Every possible selection must fit the single-cell XLSX contract.
+      if (
+        (question.type === "multi_select" || question.type === "checkboxes") &&
+        labels.join("\n").length > 32767
+      )
+        throw new Error(
+          `${name} has too much option text for Excel. Shorten the labels so all selections fit within 32,767 characters, including separators.`,
+        );
     }
     if (
       question.type === "linear_scale" &&

@@ -1,3 +1,4 @@
+import { draftETag } from "../src/form-drafts.js";
 import ExcelJS from "exceljs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -355,11 +356,12 @@ test("XLSX export preserves version tabs and owner boundaries", async (suite) =>
             )
           ).rows[0].definition,
         );
+        const expectedETag = draftETag(draft);
         draft.questions = draft.questions.slice(0, 1);
         const question = draft.questions[0];
         assert.ok(question);
         question.label = "A changed question";
-        await saveDraft(pool, fixtureId("alpha"), formId, draft);
+        await saveDraft(pool, fixtureId("alpha"), formId, draft, expectedETag);
         await publishForm(
           pool,
           fixtureId("alpha"),

@@ -68,16 +68,29 @@ test("draft lifecycle over HTTP with real PostgreSQL", async (suite) => {
   const address = server.address();
   assert.ok(address && typeof address !== "string");
   const base = `http://127.0.0.1:${address.port}`;
-  const request = (path: string, method = "GET", cookie = "", body?: unknown) =>
-    fetch(`${base}${path}`, {
+  const request = async (
+    path: string,
+    method = "GET",
+    cookie = "",
+    body?: unknown,
+    expectedETag?: string,
+  ): Promise<Response> => {
+    const etag =
+      expectedETag ??
+      (method === "PUT" && path.endsWith("/draft")
+        ? ((await request(path, "GET", cookie)).headers.get("etag") ?? "")
+        : "");
+    return fetch(`${base}${path}`, {
       method,
       headers: {
         Origin: config.webOrigin,
         Cookie: cookie,
         "Content-Type": "application/json",
+        "If-Match": etag,
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+  };
   async function login(email: string) {
     const response = await request("/auth/login", "POST", "", {
       email,
@@ -108,6 +121,63 @@ test("draft lifecycle over HTTP with real PostgreSQL", async (suite) => {
     }
     const alpha = await login("owner.alpha@example.test");
     const beta = await login("owner.beta@example.test");
+    await suite.test(
+      "stale saves and concurrent tabs cannot overwrite newer content",
+      async () => {
+        const created = object(
+          await (await request("/forms", "POST", alpha)).json(),
+        );
+        const id = String(object(created.form).id);
+        const path = `/forms/${id}/draft`;
+        const initial = await request(path, "GET", alpha);
+        const etag = initial.headers.get("etag");
+        assert.ok(etag);
+        const definition = await readDefinition(initial);
+        assert.equal(
+          (await request(path, "PUT", alpha, definition, "")).status,
+          428,
+        );
+        assert.equal(
+          (await request(path, "PUT", alpha, definition, "*")).status,
+          428,
+        );
+        const results = await Promise.all([
+          request(path, "PUT", alpha, { ...definition, title: "Tab A" }, etag),
+          request(path, "PUT", alpha, { ...definition, title: "Tab B" }, etag),
+        ]);
+        assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+        const conflict = results.find((r) => r.status === 409);
+        assert.ok(conflict);
+        assert.equal(
+          object(object(await conflict.json()).error).code,
+          "DRAFT_CHANGED",
+        );
+        const latest = await request(path, "GET", alpha);
+        assert.notEqual(latest.headers.get("etag"), etag);
+        const winner = await readDefinition(latest);
+        assert.ok(["Tab A", "Tab B"].includes(winner.title));
+        assert.equal(
+          (await request(path, "PUT", beta, definition, etag)).status,
+          404,
+        );
+        assert.equal(
+          (
+            await request(
+              path,
+              "PUT",
+              alpha,
+              { ...definition, title: "Stale" },
+              etag,
+            )
+          ).status,
+          409,
+        );
+        assert.deepEqual(
+          await readDefinition(await request(path, "GET", alpha)),
+          winner,
+        );
+      },
+    );
     const surveyId = fixtureId("survey");
     const definition = await readDefinition(
       await request(`/forms/${surveyId}/draft`, "GET", alpha),
@@ -233,7 +303,7 @@ test("draft lifecycle over HTTP with real PostgreSQL", async (suite) => {
         assert.equal(
           (await request(`/forms/${surveyId}/draft`, "PUT", alpha, edited))
             .status,
-          204,
+          200,
         );
         assert.deepEqual(
           await readDefinition(

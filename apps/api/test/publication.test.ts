@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import ExcelJS from "exceljs";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { readdir, readFile } from "node:fs/promises";
@@ -117,16 +118,29 @@ test("publication transactions and public visibility in PostgreSQL", async (suit
   await once(server, "listening");
   const address = server.address();
   assert.ok(address && typeof address !== "string");
-  const request = (path: string, method = "GET", cookie = "", body?: unknown) =>
-    fetch(`http://127.0.0.1:${address.port}${path}`, {
+  const request = async (
+    path: string,
+    method = "GET",
+    cookie = "",
+    body?: unknown,
+    expectedETag?: string,
+  ): Promise<Response> => {
+    const etag =
+      expectedETag ??
+      (method === "PUT" && path.endsWith("/draft")
+        ? ((await request(path, "GET", cookie)).headers.get("etag") ?? "")
+        : "");
+    return fetch(`http://127.0.0.1:${address.port}${path}`, {
       method,
       headers: {
         Cookie: cookie,
         Origin: config.webOrigin,
         "Content-Type": "application/json",
+        "If-Match": etag,
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+  };
   async function login(email: string) {
     const response = await request("/auth/login", "POST", "", {
       email,
@@ -164,16 +178,158 @@ test("publication transactions and public visibility in PostgreSQL", async (suit
         import.meta.url,
       );
       for (const file of (await readdir(directory))
-        .filter((file) => /^\d{3}_.*\.sql$/.test(file))
+        .filter((file) => file === "001_initial_schema.sql")
         .sort())
         await client.query(await readFile(new URL(file, directory), "utf8"));
       await seedFixtures(client);
+      await client.query("COMMIT");
+      // Exercise upgrading already-committed historical data, not just a fresh DB.
+      await client.query("BEGIN");
+      for (const file of (await readdir(directory))
+        .filter(
+          (file) =>
+            /^\d{3}_.*\.sql$/.test(file) && file !== "001_initial_schema.sql",
+        )
+        .sort())
+        await client.query(await readFile(new URL(file, directory), "utf8"));
       await client.query("COMMIT");
     } finally {
       client.release();
     }
     const alpha = await login("owner.alpha@example.test");
     const beta = await login("owner.beta@example.test");
+    await suite.test(
+      "multiple selections at Excel's limit publish, submit and export without loss",
+      async () => {
+        for (const type of ["multi_select", "checkboxes"] as const) {
+          const form = record(
+            record(await (await request("/forms", "POST", alpha)).json()).form,
+          );
+          const formId = String(form.id);
+          const definition: DraftDefinition = {
+            title: "Export boundary",
+            description: null,
+            questions: [
+              {
+                id: randomUUID(),
+                type,
+                label: "All choices",
+                required: true,
+                options: Array.from({ length: 40 }, (_, i) => ({
+                  id: randomUUID(),
+                  label: String(i).padStart(3, "0") + "x".repeat(997),
+                })),
+              },
+            ],
+          };
+          assert.equal(
+            (await request(`/forms/${formId}/draft`, "PUT", alpha, definition))
+              .status,
+            200,
+          );
+          const publish = () =>
+            request(`/forms/${formId}/publish`, "POST", alpha, {
+              publicationActionId: randomUUID(),
+              definition,
+            });
+          assert.equal((await publish()).status, 400);
+          assert.equal(
+            (
+              await pool.query(
+                "SELECT count(*)::int AS count FROM form_versions WHERE form_id=$1",
+                [formId],
+              )
+            ).rows[0].count,
+            0,
+          );
+          const question = definition.questions[0];
+          assert.ok(question && "options" in question);
+          question.options = question.options.slice(0, 33);
+          const last = question.options[32];
+          assert.ok(last);
+          last.label = last.label.slice(0, 735);
+          const expected = question.options.map((o) => o.label).join("\n");
+          assert.equal(expected.length, 32767);
+          assert.equal(
+            (await request(`/forms/${formId}/draft`, "PUT", alpha, definition))
+              .status,
+            200,
+          );
+          assert.equal((await publish()).status, 201);
+          const metadata = record(
+            record(
+              await (await request(`/forms/${formId}`, "GET", alpha)).json(),
+            ).form,
+          );
+          const publicResult = record(
+            await (await request(`/public/forms/${metadata.slug}`)).json(),
+          );
+          const published = record(publicResult.form);
+          const questions = published.questions;
+          assert.ok(Array.isArray(questions));
+          const publishedQuestion = record(questions[0]);
+          const options = publishedQuestion.options;
+          assert.ok(Array.isArray(options));
+          const submission = await request(
+            `/public/forms/${metadata.slug}/responses`,
+            "POST",
+            "",
+            {
+              formVersionId: published.formVersionId,
+              email: "boundary@example.test",
+              answers: [
+                {
+                  questionId: publishedQuestion.id,
+                  value: options.map((o) => record(o).id),
+                },
+              ],
+            },
+          );
+          assert.equal(submission.status, 201);
+          const exported = await request(
+            `/forms/${formId}/responses/export`,
+            "GET",
+            alpha,
+          );
+          assert.equal(exported.status, 200);
+          const workbook = new ExcelJS.Workbook();
+          await workbook.xlsx.load(await exported.arrayBuffer());
+          assert.equal(
+            workbook.getWorksheet("Version 1")?.getCell("C2").value,
+            expected,
+          );
+        }
+      },
+    );
+    await suite.test(
+      "committed versions reject appended questions and options",
+      async () => {
+        const versions = await pool.query(
+          "SELECT DISTINCT ON (build_transaction IS NULL) id FROM form_versions ORDER BY (build_transaction IS NULL),id",
+        );
+        assert.equal(versions.rowCount, 2); // Legacy and newly published versions.
+        for (const version of versions.rows)
+          await assert.rejects(
+            pool.query(
+              "INSERT INTO version_questions(form_version_id,label,type,position,required) VALUES($1,'Injected','short_text',999,false)",
+              [version.id],
+            ),
+            /sealed/,
+          );
+        const question = (
+          await pool.query(
+            "SELECT id,type FROM version_questions WHERE type='dropdown' LIMIT 1",
+          )
+        ).rows[0];
+        await assert.rejects(
+          pool.query(
+            "INSERT INTO question_options(question_id,question_type,label,position) VALUES($1,$2,'Injected',999)",
+            [question.id, question.type],
+          ),
+          /sealed/,
+        );
+      },
+    );
     await suite.test(
       "a draft at the save body limit remains publishable",
       async () => {
@@ -202,7 +358,7 @@ test("publication transactions and public visibility in PostgreSQL", async (suit
         assert.equal(
           (await request(`/forms/${formId}/draft`, "PUT", alpha, definition))
             .status,
-          204,
+          200,
         );
         const publication = { publicationActionId: randomUUID(), definition };
         assert.ok(Buffer.byteLength(JSON.stringify(publication)) > 256 * 1024);
@@ -379,7 +535,7 @@ test("publication transactions and public visibility in PostgreSQL", async (suit
         assert.equal(
           (await request(`/forms/${surveyId}/draft`, "PUT", alpha, invalid))
             .status,
-          204,
+          200,
         );
         const changed = await publish({
           ...action,
@@ -409,7 +565,7 @@ test("publication transactions and public visibility in PostgreSQL", async (suit
         assert.equal(
           (await request(`/forms/${surveyId}/draft`, "PUT", alpha, draft))
             .status,
-          204,
+          200,
         );
       },
     );
@@ -451,6 +607,9 @@ test("publication transactions and public visibility in PostgreSQL", async (suit
     await suite.test(
       "publish waits for archive and cannot reactivate it; original history retained",
       async () => {
+        const responseCountBefore = (
+          await pool.query("SELECT count(*)::int AS count FROM responses")
+        ).rows[0].count;
         const blocker = await pool.connect();
         try {
           await blocker.query("BEGIN");
@@ -522,7 +681,7 @@ test("publication transactions and public visibility in PostgreSQL", async (suit
         assert.equal(
           (await pool.query("SELECT count(*)::int AS count FROM responses"))
             .rows[0].count,
-          7,
+          responseCountBefore,
         );
       },
     );
