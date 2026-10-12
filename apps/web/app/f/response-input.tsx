@@ -71,24 +71,68 @@ export function ResponseInput({
           onInput={(event) => onChange(event.currentTarget.value)}
         />
       );
-    case "linear_scale":
+    case "linear_scale": {
+      const min = question.min;
+      const max = question.max;
+      // Preserve wide historical ranges without allocating unbounded radio nodes.
+      const choices =
+        min !== null && max !== null && max > min && max - min <= 20
+          ? Array.from({ length: max - min + 1 }, (_, index) => min + index)
+          : null;
       return (
         <>
-          <p className="hint">
-            {question.min}: {question.minLabel || "Minimum"} — {question.max}:{" "}
-            {question.maxLabel || "Maximum"}
-          </p>
-          <input
-            {...common}
-            type="number"
-            step={1}
-            min={question.min ?? undefined}
-            max={question.max ?? undefined}
-            value={text}
-            onInput={(event) => onChange(event.currentTarget.value)}
-          />
+          <div className="linear-scale">
+            <span className="scale-endpoint">
+              {min}
+              <small>{question.minLabel || "Minimum"}</small>
+            </span>
+            {choices ? (
+              <div
+                className="scale-choices"
+                role="radiogroup"
+                aria-label={question.label}
+                aria-required={question.required}
+                aria-invalid={Boolean(error)}
+                aria-describedby={common["aria-describedby"]}
+              >
+                {choices.map((number) => (
+                  <label className="scale-choice" key={number}>
+                    <span>{number}</span>
+                    <input
+                      type="radio"
+                      name={`answer-${question.id}`}
+                      value={String(number)}
+                      checked={text === String(number)}
+                      onChange={() => onChange(String(number))}
+                      aria-label={String(number)}
+                    />
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <input
+                {...common}
+                type="number"
+                step={1}
+                min={question.min ?? undefined}
+                max={question.max ?? undefined}
+                value={text}
+                onInput={(event) => onChange(event.currentTarget.value)}
+              />
+            )}
+            <span className="scale-endpoint">
+              {max}
+              <small>{question.maxLabel || "Maximum"}</small>
+            </span>
+          </div>
+          {!question.required && (
+            <button type="button" onClick={() => onChange("")}>
+              Clear selection
+            </button>
+          )}
         </>
       );
+    }
     case "dropdown":
       return (
         <select
