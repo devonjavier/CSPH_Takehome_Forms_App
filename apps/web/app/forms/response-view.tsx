@@ -84,8 +84,10 @@ export function ResponseView({
           <p>
             {listing.total} {listing.total === 1 ? "response" : "responses"}
           </p>
-          <button onClick={() => reload(0)}>Refresh responses</button>
-          <ExportButton formId={formId} />
+          <div className="actions response-actions">
+            <button onClick={() => reload(0)}>Refresh responses</button>
+            <ExportButton formId={formId} />
+          </div>
           {listing.total === 0 ? (
             <p className="notice">No responses yet.</p>
           ) : (
