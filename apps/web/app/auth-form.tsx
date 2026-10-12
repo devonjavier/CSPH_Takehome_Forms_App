@@ -8,6 +8,7 @@ import { requestApi } from "./api-client";
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [openingForms, setOpeningForms] = useState(false);
   const [error, setError] = useState("");
   const registering = mode === "register";
 
@@ -26,13 +27,25 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           password: fields.get("password"),
         }),
       });
+      // Keep the waiting screen mounted until the destination route is ready.
+      setOpeningForms(true);
       router.replace("/forms");
     } catch (failure) {
       setError(
         failure instanceof Error ? failure.message : "Please try again.",
       );
       setPending(false);
+      setOpeningForms(false);
     }
+  }
+
+  if (openingForms) {
+    return (
+      <main className="account-page" aria-busy="true">
+        <h1>Opening your forms</h1>
+        <p role="status">You’re signed in. Loading your workspace…</p>
+      </main>
+    );
   }
 
   return (
