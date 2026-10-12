@@ -12,6 +12,9 @@ import { createDatabasePool } from "../src/database.js";
 import {
   parseSubmission,
   validateAnswers,
+  serializeSubmission,
+  submissionBodyLimitBytes,
+  SubmissionError,
   type Submission,
 } from "../src/contracts/submission.js";
 import {
@@ -19,7 +22,10 @@ import {
   parsePublicForm,
   type PublicForm,
 } from "../src/contracts/draft.js";
-import { readPublicForm } from "../src/public-definition.js";
+import {
+  readPublicForm,
+  validatePublicSlug,
+} from "../src/public-definition.js";
 import { publishForm, unpublishForm } from "../src/publication.js";
 import { archiveForm, createDraft, saveDraft } from "../src/form-drafts.js";
 import { fixtureId, seedFixtures } from "../scripts/fixtures.js";
@@ -63,6 +69,80 @@ function validSubmission(form: PublicForm): Submission {
     }),
   };
 }
+
+test("public slugs reject unsupported characters with a complete match", () => {
+  for (const slug of [
+    "",
+    "\u0000",
+    "demo-survey\n",
+    "demo-survey\r",
+    "Demo",
+    "-demo",
+    "demo-",
+    "demo--survey",
+    "demo/survey",
+  ])
+    assert.throws(() => validatePublicSlug(slug), /Form not found/);
+  for (const slug of ["demo-survey", randomUUID()])
+    assert.doesNotThrow(() => validatePublicSlug(slug));
+});
+
+test("submission preflight counts UTF-8 and JSON escaping at the exact byte boundary", () => {
+  const definition = parseDraft({
+    title: "Size",
+    description: null,
+    questions: Array.from({ length: 100 }, () => ({
+      id: randomUUID(),
+      type: "long_text",
+      label: "Text",
+      required: false,
+    })),
+  });
+  const makeSubmission = (value: string): Submission => ({
+    formVersionId: randomUUID(),
+    email: "size@example.test",
+    answers: definition.questions.map((q) => ({ questionId: q.id, value })),
+  });
+  const ascii = makeSubmission("a".repeat(10000));
+  validateAnswers(definition, ascii);
+  assert.equal(serializeSubmission(ascii), JSON.stringify(ascii));
+  for (const character of ["界", "\u0001"]) {
+    const oversized = makeSubmission(character.repeat(10000));
+    validateAnswers(definition, oversized);
+    const original = JSON.stringify(oversized);
+    assert.throws(
+      () => serializeSubmission(oversized),
+      (error: unknown) =>
+        error instanceof SubmissionError && error.field === "form",
+    );
+    assert.equal(JSON.stringify(oversized), original); // Preserve entered values.
+    const boundary = makeSubmission("");
+    const last = boundary.answers.at(-1);
+    assert.ok(last);
+    last.value = "aa";
+    let remaining =
+      submissionBodyLimitBytes - Buffer.byteLength(JSON.stringify(boundary));
+    const unitBytes = Buffer.byteLength(JSON.stringify(character)) - 2;
+    for (const answer of boundary.answers.slice(0, -1)) {
+      const units = Math.min(9999, Math.floor(remaining / unitBytes));
+      answer.value = character.repeat(units);
+      remaining -= units * unitBytes;
+    }
+    last.value = String(last.value) + "a".repeat(remaining);
+    validateAnswers(definition, boundary);
+    assert.equal(
+      Buffer.byteLength(serializeSubmission(boundary)),
+      submissionBodyLimitBytes,
+    );
+    last.value += "a";
+    assert.throws(() => serializeSubmission(boundary), SubmissionError);
+    last.value = String(last.value).slice(0, -2);
+    assert.equal(
+      Buffer.byteLength(serializeSubmission(boundary)),
+      submissionBodyLimitBytes - 1,
+    );
+  }
+});
 
 test("public submissions validate and commit atomically in PostgreSQL", async (suite) => {
   const schema = `responses_test_${randomUUID().replaceAll("-", "")}`;
@@ -129,6 +209,70 @@ test("public submissions validate and commit atomically in PostgreSQL", async (s
     }
     const form = parsePublicForm(await readPublicForm(pool, "demo-survey"));
     const valid = validSubmission(form);
+    await suite.test(
+      "invalid public paths return client errors without writes or webhook attempts",
+      async () => {
+        const before = await counts();
+        const attemptsBefore = (
+          await pool.query("SELECT count(*) FROM webhook_attempts")
+        ).rows[0].count;
+        for (const [slug, status, code] of [
+          ["%00", 404, "NOT_FOUND"],
+          ["demo-survey%0A", 404, "NOT_FOUND"],
+          ["%E0%A4%A", 400, "INVALID_PATH"],
+          ["%", 400, "INVALID_PATH"],
+          [randomUUID(), 404, "NOT_FOUND"],
+        ] as const) {
+          for (const response of [
+            await fetch(
+              `http://127.0.0.1:${address.port}/public/forms/${slug}`,
+            ),
+            await request(valid, slug),
+          ]) {
+            assert.equal(response.status, status);
+            assert.equal(
+              record(record(await response.json()).error).code,
+              code,
+            );
+          }
+        }
+        await assert.rejects(readPublicForm(pool, "\u0000"), /Form not found/);
+        assert.throws(
+          () => submitResponse(pool, "\u0000", valid),
+          /Form not found/,
+        );
+        assert.deepEqual(await counts(), before);
+        assert.equal(
+          (await pool.query("SELECT count(*) FROM webhook_attempts")).rows[0]
+            .count,
+          attemptsBefore,
+        );
+      },
+    );
+    await suite.test(
+      "HTTP parser enforces the shared exact byte limit",
+      async () => {
+        const before = await counts();
+        // Invalid email ensures the boundary probe does not create a response/job.
+        const body = { ...valid, email: "", padding: "" };
+        body.padding = "a".repeat(
+          submissionBodyLimitBytes - Buffer.byteLength(JSON.stringify(body)),
+        );
+        assert.equal(
+          Buffer.byteLength(JSON.stringify(body)),
+          submissionBodyLimitBytes,
+        );
+        const atLimit = await request(body);
+        assert.equal(atLimit.status, 400);
+        assert.equal(
+          record(record(await atLimit.json()).error).code,
+          "INVALID_SUBMISSION",
+        );
+        body.padding += "a";
+        assert.equal((await request(body)).status, 413);
+        assert.deepEqual(await counts(), before);
+      },
+    );
     const originalHistory = (
       await pool.query(
         "SELECT jsonb_agg(to_jsonb(q) ORDER BY id) AS snapshot FROM version_questions q",

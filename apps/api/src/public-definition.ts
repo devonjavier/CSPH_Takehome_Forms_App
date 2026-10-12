@@ -1,10 +1,17 @@
 import type { Pool, PoolClient } from "pg";
 import { HttpError } from "./errors.js";
 
+export function validatePublicSlug(slug: string): void {
+  // Require a complete match, including rejecting trailing newline characters.
+  if (/^[a-z0-9]+(?:-[a-z0-9]+)*/.exec(slug)?.[0] !== slug)
+    throw new HttpError(404, "NOT_FOUND", "Form not found.");
+}
+
 export async function readPublicForm(
   pool: Pool | PoolClient,
   slug: string,
 ): Promise<unknown> {
+  validatePublicSlug(slug);
   // One statement gives a consistent snapshot of visibility, pointer and tree.
   // Never join form_drafts or project owner/webhook information here.
   const result = await pool.query(

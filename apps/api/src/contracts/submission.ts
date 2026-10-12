@@ -1,4 +1,5 @@
 import type { DraftDefinition } from "./draft.js";
+export const submissionBodyLimitBytes = 2 * 1024 * 1024;
 export type Submission = {
   formVersionId: string;
   email: string;
@@ -19,6 +20,16 @@ export class SubmissionError extends Error {
   ) {
     super(message);
   }
+}
+
+export function serializeSubmission(submission: Submission): string {
+  const body = JSON.stringify(submission);
+  if (new TextEncoder().encode(body).byteLength > submissionBodyLimitBytes)
+    throw new SubmissionError(
+      "These answers exceed the 2 MiB submission limit. Shorten some long-text answers before submitting. Your entries have been kept.",
+      "form",
+    );
+  return body;
 }
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);

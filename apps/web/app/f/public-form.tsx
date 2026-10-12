@@ -5,6 +5,7 @@ import {
   parseSubmission,
   validateAnswers,
   SubmissionError,
+  serializeSubmission,
 } from "../../../api/src/contracts/submission";
 import {
   parsePublicForm,
@@ -96,7 +97,7 @@ export function PublicFormPage({ slug }: { slug: string }) {
       await requestApi(`/public/forms/${encodeURIComponent(slug)}/responses`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(submission),
+        body: serializeSubmission(submission),
       });
       setSuccess(true);
     } catch (failure) {

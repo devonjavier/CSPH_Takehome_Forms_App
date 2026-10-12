@@ -1,19 +1,27 @@
-import { readPublicForm } from "./public-definition.js";
+import { readPublicForm, validatePublicSlug } from "./public-definition.js";
 import { Router, json } from "express";
 import type { Pool } from "pg";
 import { HttpError } from "./errors.js";
 import { submitResponse } from "./responses.js";
-import { parseSubmission, SubmissionError } from "./contracts/submission.js";
+import {
+  parseSubmission,
+  SubmissionError,
+  submissionBodyLimitBytes,
+} from "./contracts/submission.js";
 import { scheduleWebhook } from "./webhooks.js";
 
 export function createPublicFormsRouter(pool: Pool): Router {
   const router = Router();
+  router.param("slug", (_request, _response, next, slug: string) => {
+    validatePublicSlug(slug);
+    next();
+  });
   router.get("/:slug", async (request, response) => {
     response.json({ form: await readPublicForm(pool, request.params.slug) });
   });
   router.post(
     "/:slug/responses",
-    json({ limit: "2mb" }),
+    json({ limit: submissionBodyLimitBytes }),
     async (request, response) => {
       if (!request.is("application/json"))
         throw new HttpError(415, "JSON_REQUIRED", "Send application/json.");

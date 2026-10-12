@@ -21,6 +21,12 @@ export const handleError: ErrorRequestHandler = (
     next(error);
     return;
   }
+  if (error instanceof URIError && "status" in error && error.status === 400) {
+    response.status(400).json({
+      error: { code: "INVALID_PATH", message: "Use a valid URL path." },
+    });
+    return;
+  }
   if (error instanceof HttpError) {
     response.status(error.status).json({
       error: {

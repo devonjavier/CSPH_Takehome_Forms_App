@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import { withTransaction } from "./database.js";
 import { HttpError } from "./errors.js";
-import { readPublicForm } from "./public-definition.js";
+import { readPublicForm, validatePublicSlug } from "./public-definition.js";
 import { validateAnswers, type Submission } from "./contracts/submission.js";
 import { parsePublicForm } from "./contracts/draft.js";
 import type { WebhookConfig, WebhookJob } from "./webhooks.js";
@@ -11,6 +11,7 @@ export function submitResponse(
   slug: string,
   submission: Submission,
 ) {
+  validatePublicSlug(slug);
   return withTransaction(pool, async (client) => {
     // Same root lock as publish/unpublish/archive. Whichever transaction gets
     // the lock first completes before the next rechecks visibility and version.
