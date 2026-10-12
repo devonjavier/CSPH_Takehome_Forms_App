@@ -51,6 +51,44 @@ import { readAuthConfig } from "../src/auth.js";
 import { createDatabasePool } from "../src/database.js";
 import { fixtureId, seedFixtures, demoPassword } from "../scripts/fixtures.js";
 import { archiveForm } from "../src/form-drafts.js";
+import {
+  readWebhookOrigins,
+  assertWebhookDestination,
+} from "../src/webhook-policy.js";
+
+test("production requires an exact trusted webhook-origin allowlist", () => {
+  assert.throws(
+    () => readWebhookOrigins({ NODE_ENV: "production" }),
+    /WEBHOOK_ALLOWED_ORIGINS/,
+  );
+  const allowed = readWebhookOrigins({
+    NODE_ENV: "production",
+    WEBHOOK_ALLOWED_ORIGINS:
+      "https://receiver.example.test,http://127.0.0.1:4001",
+  });
+  for (const url of [
+    "https://receiver.example.test/path",
+    "http://127.0.0.1:4001/webhooks",
+  ])
+    assert.doesNotThrow(() => assertWebhookDestination(new URL(url), allowed));
+  for (const url of [
+    "http://169.254.169.254/latest/meta-data",
+    "https://receiver.example.test.evil.test",
+    "https://receiver.example.test:444",
+    "http://receiver.example.test",
+  ])
+    assert.throws(
+      () => assertWebhookDestination(new URL(url), allowed),
+      /not allowed/,
+    );
+  for (const entry of [
+    "*",
+    "https://receiver.example.test/path",
+    "https://user:secret@example.test",
+    "https://example.test/",
+  ])
+    assert.throws(() => readWebhookOrigins({ WEBHOOK_ALLOWED_ORIGINS: entry }));
+});
 
 test("webhooks commit first and preserve owner boundaries", async (suite) => {
   const schema = `webhook_test_${randomUUID().replaceAll("-", "")}`;
@@ -172,6 +210,33 @@ test("webhooks commit first and preserve owner boundaries", async (suite) => {
       return attempts.rows[0];
     }
     try {
+      await suite.test(
+        "persisted destinations are rechecked before sending and blocked attempts are logged",
+        async () => {
+          const previous = process.env.WEBHOOK_ALLOWED_ORIGINS;
+          try {
+            process.env.WEBHOOK_ALLOWED_ORIGINS =
+              "https://trusted.example.test";
+            assert.equal(
+              (await put({ url: receiverUrl, secret: "test-secret" })).status,
+              400,
+            );
+            // The seed has a local destination saved before this policy was applied.
+            const responseId = await submit();
+            const attempt = await attemptFor(responseId);
+            assert.equal(attempt.status_code, null);
+            assert.equal(
+              attempt.error_message,
+              "Webhook destination is blocked by server policy.",
+            );
+            assert.equal(received, undefined);
+          } finally {
+            if (previous === undefined)
+              delete process.env.WEBHOOK_ALLOWED_ORIGINS;
+            else process.env.WEBHOOK_ALLOWED_ORIGINS = previous;
+          }
+        },
+      );
       await suite.test(
         "owner settings validation and write-only secret",
         async () => {

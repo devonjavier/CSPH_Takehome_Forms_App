@@ -2,6 +2,7 @@ import { createApp } from "./app.js";
 import { createDatabasePool } from "./database.js";
 import { readAuthConfig } from "./auth.js";
 import { drainWebhooks } from "./webhooks.js";
+import { readWebhookOrigins } from "./webhook-policy.js";
 
 const port = Number(process.env.PORT ?? "4000");
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -10,6 +11,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 
 async function startServer() {
   const authConfig = readAuthConfig();
+  readWebhookOrigins();
   const pool = createDatabasePool();
   try {
     await pool.query("SELECT 1");
@@ -55,7 +57,7 @@ async function startServer() {
 
 void startServer().catch(() => {
   console.error(
-    "API startup failed. Check PORT, PG*, JWT_SECRET, WEB_ORIGIN and database availability.",
+    "API startup failed. Check PORT, PG*, JWT_SECRET, WEB_ORIGIN, WEBHOOK_ALLOWED_ORIGINS and database availability.",
   );
   process.exitCode = 1;
 });

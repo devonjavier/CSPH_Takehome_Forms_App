@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import { withTransaction } from "./database.js";
 import { lockOwnedForm } from "./form-drafts.js";
 import { HttpError } from "./errors.js";
+import { assertWebhookDestination } from "./webhook-policy.js";
 
 export type WebhookConfig = { url: string; secret: string };
 export type WebhookJob = WebhookConfig & {
@@ -41,6 +42,7 @@ export function parseWebhook(input: unknown): { url: string; secret?: string } {
       "INVALID_WEBHOOK",
       "Use HTTP or HTTPS without credentials or a fragment.",
     );
+  assertWebhookDestination(url);
   const secret = "secret" in input ? input.secret : undefined;
   if (
     secret !== undefined &&
@@ -112,6 +114,8 @@ async function deliverWebhook(pool: Pool, job: WebhookJob) {
   let error: string | null = null;
   const timeout = AbortSignal.timeout(webhookTimeoutMs);
   try {
+    // Recheck persisted configurations too, including seeds and policy changes.
+    assertWebhookDestination(new URL(job.url));
     const result = await fetch(job.url, {
       method: "POST",
       redirect: "manual",
@@ -127,10 +131,14 @@ async function deliverWebhook(pool: Pool, job: WebhookJob) {
     // Neither read nor log arbitrary receiver bodies, and never follow redirects
     // carrying a secret to another destination.
     await result.body?.cancel();
-  } catch {
-    error = timeout.aborted
-      ? "Delivery timed out."
-      : "Could not connect to webhook receiver.";
+  } catch (failure) {
+    if (
+      failure instanceof HttpError &&
+      failure.code === "WEBHOOK_DESTINATION_BLOCKED"
+    )
+      error = "Webhook destination is blocked by server policy.";
+    else if (timeout.aborted) error = "Delivery timed out.";
+    else error = "Could not connect to webhook receiver.";
   }
   await pool.query(
     "UPDATE webhook_attempts SET completed_at=clock_timestamp(),status_code=$2,error_message=$3 WHERE id=$1",
