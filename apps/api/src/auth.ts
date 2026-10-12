@@ -159,7 +159,12 @@ function credentials(input: unknown): { email: string; password: string } {
     );
   }
   const email = input.email.trim().toLowerCase();
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (
+    /\p{Cc}/u.test(input.email) ||
+    /[\uD800-\uDFFF]/u.test(input.email) ||
+    email.length > 254 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  ) {
     throw new HttpError(400, "INVALID_EMAIL", "Enter a valid email address.");
   }
   if (

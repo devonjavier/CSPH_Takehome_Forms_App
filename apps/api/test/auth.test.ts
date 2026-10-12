@@ -99,6 +99,33 @@ test("authentication and owner boundaries over HTTP with PostgreSQL", async (sui
     }
 
     await suite.test(
+      "malformed account emails fail validation before SQL",
+      async () => {
+        const before = (await pool.query("SELECT count(*) FROM users")).rows[0]
+          .count;
+        for (const email of [
+          "audit\u0000@example.test",
+          "audit\ud800@example.test",
+          "audit\n@example.test",
+          " ",
+        ]) {
+          for (const path of ["/auth/register", "/auth/login"]) {
+            const response = await post(path, {
+              email,
+              password: demoPassword,
+            });
+            assert.equal(response.status, 400);
+            const result = await response.text();
+            assert.match(result, /"code":"INVALID_EMAIL"/);
+          }
+        }
+        assert.equal(
+          (await pool.query("SELECT count(*) FROM users")).rows[0].count,
+          before,
+        );
+      },
+    );
+    await suite.test(
       "seeded owners can log in and cookies expose no password/token JSON",
       async () => {
         const alpha = await post("/auth/login", {
