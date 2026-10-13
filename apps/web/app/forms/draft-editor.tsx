@@ -14,6 +14,7 @@ import {
 } from "../../../api/src/contracts/draft";
 import { ApiError, isRecord, requestApi } from "../api-client";
 import { PublicationControls } from "./publication-controls";
+import { useUnsavedDraft } from "../account-shell";
 
 const typeLabels: Record<QuestionType, string> = {
   short_text: "Short text",
@@ -49,6 +50,7 @@ export function DraftEditor({ formId }: { formId: string }) {
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const dirty = draft !== null && JSON.stringify(draft) !== saved;
+  useUnsavedDraft(dirty);
   useEffect(() => {
     const controller = new AbortController();
     requestApi(`/forms/${formId}/draft`, { signal: controller.signal })

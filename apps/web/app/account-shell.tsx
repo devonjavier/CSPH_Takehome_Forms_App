@@ -6,7 +6,9 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
+  type RefObject,
   type ReactNode,
 } from "react";
 import { ApiError, isRecord, requestApi } from "./api-client";
@@ -19,6 +21,19 @@ type Session = {
   retry: () => void;
 };
 const AccountContext = createContext<Session | null>(null);
+const UnsavedDraftContext = createContext<RefObject<boolean> | null>(null);
+
+export function useUnsavedDraft(dirty: boolean) {
+  const unsavedDraft = useContext(UnsavedDraftContext);
+  if (!unsavedDraft)
+    throw new Error("Draft navigation context is unavailable.");
+  useEffect(() => {
+    unsavedDraft.current = dirty;
+    return () => {
+      unsavedDraft.current = false;
+    };
+  }, [dirty, unsavedDraft]);
+}
 
 export function useAccount(): Session {
   const session = useContext(AccountContext);
@@ -41,6 +56,16 @@ function AccountLayout({
   children: ReactNode;
 }) {
   const router = useRouter();
+  const unsavedDraft = useRef(false);
+  function confirmLeave() {
+    return (
+      !unsavedDraft.current ||
+      window.confirm("Leave without saving your draft changes?")
+    );
+  }
+  function guardNavigation(event: { preventDefault: () => void }) {
+    if (!confirmLeave()) event.preventDefault();
+  }
   const [result, setResult] = useState<{
     path: string;
     user: Account | null;
@@ -85,6 +110,8 @@ function AccountLayout({
     retry: () => setAttempt((value) => value + 1),
   };
   async function signOut() {
+    // Confirm before clearing the session; Cancel must have no side effects.
+    if (!confirmLeave()) return;
     setSigningOut(true);
     setLogoutError("");
     try {
@@ -100,7 +127,7 @@ function AccountLayout({
   return (
     <AccountContext.Provider value={session}>
       <header className="site-header">
-        <Link className="brand" href="/">
+        <Link className="brand" href="/" onNavigate={guardNavigation}>
           Forms App
         </Link>
         <nav aria-label="Account navigation" className="account-menu">
@@ -108,7 +135,9 @@ function AccountLayout({
             <span role="status">Checking account…</span>
           ) : session.user ? (
             <>
-              <Link href="/forms">Your forms</Link>
+              <Link href="/forms" onNavigate={guardNavigation}>
+                Your forms
+              </Link>
               <span className="account-identity">
                 <small>Signed in as</small>
                 {session.user.email}
@@ -124,8 +153,12 @@ function AccountLayout({
             </>
           ) : (
             <>
-              <Link href="/login">Sign in</Link>
-              <Link href="/register">Create account</Link>
+              <Link href="/login" onNavigate={guardNavigation}>
+                Sign in
+              </Link>
+              <Link href="/register" onNavigate={guardNavigation}>
+                Create account
+              </Link>
             </>
           )}
           {logoutError && (
@@ -135,7 +168,9 @@ function AccountLayout({
           )}
         </nav>
       </header>
-      {children}
+      <UnsavedDraftContext.Provider value={unsavedDraft}>
+        {children}
+      </UnsavedDraftContext.Provider>
     </AccountContext.Provider>
   );
 }
