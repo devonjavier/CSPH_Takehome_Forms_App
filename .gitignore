@@ -12,3 +12,6 @@ coverage/
 docs/
 
 progress.md
+
+
+*.md
