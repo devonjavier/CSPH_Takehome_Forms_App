@@ -1,10 +1,23 @@
 # Forms App
 
-Take-home forms application. PostgreSQL, versioned schema/fixtures, authentication,
-owner-scoped form building/publication, and public submissions are implemented.
-Owner response viewing, XLSX export and webhook delivery remain subsequent tickets.
+For a read-only database walkthrough alongside the UI, see
+[PostgreSQL lifecycle trace](POSTGRESQL-TRACE.md): drafts, immutable versions,
+questions/options, responses, selections and delivery logs.
+
+Take-home forms application built with Next.js, Express/TypeScript and PostgreSQL
+in an npm workspace monorepo. Owners create and publish forms; respondents submit
+without an account. Responses retain their original question versions, export to
+version-specific XLSX sheets, and trigger asynchronous webhooks with delivery logs.
+A separate consumer demonstrates receipt and displays payloads.
+
+For the code and design explanation, see the
+[architecture walkthrough](ARCHITECTURE-WALKTHROUGH.md).
 
 ## Run the applications
+
+For the ordered first-run procedure, acceptance demo and interview walkthrough,
+see [Phase 5 handoff](PHASE-5-HANDOFF.md). Run `npm test` for all application
+regression suites once PostgreSQL and the API environment are configured.
 
 Use Node.js 24 and npm 11. This repository uses npm workspaces with one root
 package-lock.json; run installs from the repository root.
@@ -19,16 +32,26 @@ npm run dev
 |---|---|---|
 | Next.js web | http://localhost:3000 | Home, login, registration and your forms |
 | Express API | http://localhost:4000/health | JSON liveness response |
-| Webhook consumer | http://localhost:4001 | Placeholder page; /health returns JSON |
+| Webhook consumer | http://127.0.0.1:4001 | Received payload list; secret-checked POST /webhooks |
 
 Press Ctrl+C to stop the development apps. You can instead run one app with
 `npm run dev:web`, `npm run dev:api`, or `npm run dev:consumer`.
+
+The API and consumer use `tsx watch`, excluding `node_modules`, so dependency-file
+notifications do not restart them and interrupt active requests. Application edits
+still restart the relevant server. After changing dependencies or environment files,
+restart `npm run dev` manually. Watcher regression check: `node scripts/test-dev-watch.mjs`.
+
+After updating these development scripts, stop and restart an already-running
+`npm run dev` once. Intentional application edits still restart the API and may
+briefly interrupt in-flight requests; development watching is not zero-downtime
+deployment.
 
 The API requires PostgreSQL and checks its connection before opening the HTTP port.
 `GET /health` reports process liveness; `GET /ready` queries PostgreSQL and returns
 200 when available or a generic 503 without database details when unavailable.
 Readiness verifies connectivity, not migration version or application completeness.
-The consumer does not yet accept POSTs or receive payloads; HOOK-02 implements that.
+The consumer requires WEBHOOK_SECRET; copy its example environment file on first setup.
 
 Root `.env` remains Docker Compose configuration. The API and consumer optionally
 load their own `apps/<name>/.env` via Node's environment-file support; copy their
@@ -54,11 +77,17 @@ The API_INTERNAL_URL setting is server-only and contains no database credentials
 Run `docker compose up -d --wait`, apply migrations, seed if desired, then `npm run dev`.
 
 ```powershell
+npm test
 npm run typecheck
 npm run lint
 npm run format:check
 npm run build
 ```
+
+The application tests require local PostgreSQL and the configured environment;
+integration suites use isolated test schemas. The watcher regression above is a
+separate check and is not included in `npm test`. Hosted GitHub Actions results
+must be checked independently of local test success.
 
 `npm run format` applies the single Prettier configuration to application source.
 After building, run each desired app in its own terminal:
@@ -83,6 +112,34 @@ ORM migration system. Existing root pg/dotenv dependencies are preserved; the AP
 also declares pg and its types as workspace dependencies. Node loads its environment
 file, so dotenv is not needed by the current server implementation.
 
+### Navigation and loading
+
+The shared header displays the verified account email and sign-out controls on
+owner pages. Public `/f/:slug` pages omit the account header and profile request.
+Authenticated visitors to the home page are directed to their forms.
+
+After login or registration succeeds, the page shows **Opening your forms** until
+navigation completes. Forms routes have a loading boundary, and individual screens
+show their own data-loading/error states. These states do not require a fixed delay.
+The JSON client retries failed GETs once within its 10-second timeout; mutations
+are never retried automatically. Publication has a separate action-ID retry contract.
+
+### Troubleshooting local connections
+
+- Open the website on port **3000**. Port **4000** serves the API; its root returning
+  `NOT_FOUND` is expected. Use `/health` for liveness and `/ready` for database access.
+- `ECONNREFUSED` means the target was not accepting the connection. Confirm the API
+  startup message and its configured port before retrying.
+- `ECONNRESET` means a connection was interrupted. Check the API log at the same
+  time. A reproduced incident showed the old Node watcher restarting Express after
+  an `iconv-lite` dependency notification. The current development watcher excludes
+  dependencies; restart the dev command to adopt it.
+- Actual application-source edits still cause restarts. A loading screen cannot
+  prevent those interruptions, and a failed write may already have committed before
+  the reply was lost. Do not assume a repeated submission is harmless.
+- Use `localhost:3000` consistently: switching hostname changes the browser origin
+  and cookie scope, and may fail the API's trusted-origin check.
+
 ## API database lifecycle and transactions
 
 `apps/api/src/database.ts` creates a bounded pool (10 connections, 2-second connection
@@ -101,8 +158,8 @@ Do not nest the helper or perform external webhook requests inside a transaction
 Startup fails if PostgreSQL cannot be reached. SIGINT/SIGTERM stops accepting HTTP
 requests, drains active requests, and ends the pool, with a 10-second shutdown limit.
 Migrations are explicit commands, not automatic side effects of starting the API.
-Ownership and form publication locks belong to later services; this helper does
-not implement those business rules.
+Ownership and publication locks are implemented in the domain services; the
+transaction helper manages connections and commit/rollback, not those rules.
 
 ```powershell
 npm run test:db
@@ -124,7 +181,7 @@ CI provides PG* directly. Application startup does not use that test-only fallba
 3. Start Docker Desktop, wait for its engine to be ready, and open a new terminal.
 4. Check `docker --version`, `docker compose version`, and `docker info`.
 
-Node.js is needed later for the applications. PostgreSQL does not need a separate
+Node.js runs the applications and their tests. PostgreSQL does not need a separate
 Windows installation: Docker Compose runs the official PostgreSQL 18 image.
 
 ## Start the database
@@ -132,7 +189,7 @@ Windows installation: Docker Compose runs the official PostgreSQL 18 image.
 Run these commands from the repository root in PowerShell:
 
 ```powershell
-Copy-Item .env.example .env
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 # Edit .env to choose your local development password.
 docker compose up -d --wait
 docker compose ps
@@ -223,7 +280,7 @@ Command-line clients must send the same Origin header and manage the cookie jar.
 Logout clears the browser cookie. JWTs are stateless: a copied token remains valid
 until expiry, there is no refresh token or per-session revocation table, and users
 sign in again after an hour. Password reset, email verification and distributed
-login throttling are not implemented in this bounded ticket.
+login throttling are not implemented in this bounded assessment.
 
 | API route (prefix `/api` through Next.js) | Result |
 |---|---|
@@ -234,8 +291,8 @@ login throttling are not implemented in this bounded ticket.
 | GET /forms | Non-archived forms owned by the verified user |
 | GET /forms/:formId | Owned, non-archived summary; absent/foreign/archived -> same 404 |
 | POST /forms | Create an empty private draft owned by the session user; 201 `{form:{id}}` |
-| GET /forms/:formId/draft | Owner-only `{definition}`; absent/foreign/archived -> 404 |
-| PUT /forms/:formId/draft | Save a draft definition as JSON; 204 |
+| GET /forms/:formId/draft | Owner-only `{definition,etag}` plus ETag header; absent/foreign/archived -> 404 |
+| PUT /forms/:formId/draft | JSON definition with `If-Match` from GET; 200 `{etag}` for next save; missing precondition -> 428, changed draft -> 409 |
 | DELETE /forms/:formId | Archive under a form-row lock; 204; retain history |
 | GET /forms/:formId/publication | Owner-only slug, online state and latest version |
 | POST /forms/:formId/publish | `{publicationActionId,definition}`; 201 for new version, 200 for replay |
@@ -244,10 +301,10 @@ login throttling are not implemented in this bounded ticket.
 
 Management SQL takes the owner UUID from the verified session, never request
 parameters/body. Both list and direct-ID lookups scope by owner and deleted_at.
-Future mutation/response/export/webhook routes must preserve that boundary and join
-back to the owning form. Authentication is mounted on management routes; public
-definition reads are now available without authentication. The respondent screen
-and submission endpoint belong to RESP-01.
+Mutation, response, export and webhook routes preserve that boundary through the
+owning form. Authentication is mounted on management routes; public definition
+reads and submissions require no login. Public POSTs still require the configured
+Origin header.
 
 Errors have `{error:{code,message}}` shape. Malformed JSON, invalid credentials,
 oversized bodies, unsupported content types, expired sessions and ownership failures
@@ -293,18 +350,29 @@ The pure browser-safe contract in `apps/api/src/contracts/draft.ts` is shared wi
 the frontend; it imports no server modules, environment variables or credentials.
 
 Limits: 100 questions, 100 options per question, 500 title characters, 1,000 label
-characters, 10,000 description characters, and 256 KiB per JSON request. Auth routes
+characters, 10,000 description characters, and 256 KiB per draft JSON request.
+Publishing allows 257 KiB for the same definition plus its action-ID envelope.
+NUL and unpaired surrogate characters are rejected before database writes. Auth routes
 retain their 16 KiB limit. Failed saves keep the editor contents and show an error.
 Explicit save feedback distinguishes unsaved changes from the saved draft.
-Concurrent editor saves use last-committed-write-wins; collaborative editing and
-conflict resolution are not implemented.
+The editor registers unsaved changes with the shared account header. Same-tab
+header navigation and sign-out ask for confirmation before leaving; Cancel keeps
+the edits and session. Successful saving or leaving the editor clears the guard.
+Document exits retain the browser's unsaved-change warning. This is explicit-save
+behavior, not autosave or durable offline storage.
+Draft saves compare the normalized definition SHA-256 ETag under the existing
+owner/form row lock. Two tabs cannot silently overwrite different content: a stale
+`If-Match` returns `409 DRAFT_CHANGED`. Local edits remain visible until the owner
+explicitly confirms reloading the saved draft. There is no automatic merge. A lost
+save acknowledgement may require this same reload; reload once after upgrading an
+already-open editor to this API contract.
 
 Create inserts the form and draft atomically. Save and archive verify ownership
 while locking the form root. Archive sets `deleted_at` and disables publication;
 the current version and every stored response remain. The UI requires confirmation,
 and there is no restore feature. Archived forms disappear from the owner list and
-all implemented management reads/writes return 404. Future publish/submission
-operations must acquire this same root lock. No schema migration was needed.
+all implemented management reads/writes return 404. Publish/submission
+operations acquire this same root lock. Draft ETags need no schema migration.
 
 ```powershell
 npm run test:forms
@@ -461,15 +529,15 @@ exercise ID-based rendering and export columns.
 Answer fixtures include optional blanks, repeated respondent emails, minimum and
 maximum ratings, leap-day dates, multiple selected options in a different order
 from the option list, Unicode, quotes, multiline text, HTML-looking text, and
-`=SUM(1,2)` stored as literal text. These prepare later UI/XLSX tests; they do not
+`=SUM(1,2)` stored as literal text. These exercise UI/XLSX edge cases; they do not
 claim escaping or export functionality already exists. Invalid foreign options,
 cross-version answers, and duplicates belong in rollback-only constraint tests,
 not in persistent sample records.
 
 The survey webhook is configured for `http://localhost:4001/webhooks` with sample
 secret `demo-webhook-secret-local-only`. No HTTP calls or pretend delivery attempts
-are made by seeding. The consumer route/secret validation comes in HOOK-02; configure
-its matching secret then. This URL assumes the API and consumer run on the host.
+are made by seeding. The consumer example environment uses the matching demo secret.
+This URL assumes the API and consumer run on the host.
 
 All inserts share one transaction and a seed-specific advisory lock. Stable IDs
 identify the fixture set. If both owners and all four form roots already exist,
@@ -547,7 +615,13 @@ Use published question/option IDs from GET, never draft IDs. Answer values are:
 | Multi-select / checkboxes | Array of distinct option UUIDs for that question |
 | Linear scale | Integer between the published endpoints, inclusive |
 
-The request limit is 2 MiB. Optional omitted/null/blank values and empty multiple
+The request limit is 2 MiB of serialized UTF-8 JSON, including JSON escaping and
+metadata. The browser checks this shared limit before sending and retains entered
+answers with a message to shorten long-text answers when exceeded; the API also
+enforces it independently. Individual field limits do not guarantee the whole
+response fits. Invalid public slugs return `404 NOT_FOUND`; malformed percent
+encoding returns `400 INVALID_PATH`, without database writes or webhook delivery.
+Optional omitted/null/blank values and empty multiple
 selections become unanswered; malformed values still fail. Every question gets one
 answer row, with null scalar columns and no selections when unanswered. Email is
 trimmed/lowercased; repeated emails are allowed. Required whitespace-only answers,
@@ -572,9 +646,195 @@ These API responses use `Cache-Control: no-store`.
 
 An in-flight guard prevents repeated clicks. Submission has no idempotency key:
 if the server commits but the connection fails before confirmation, a manual retry
-may create another response. Webhook delivery is not implemented in this ticket.
+may create another response. After a successful commit, the API schedules webhook
+delivery independently; a slow or failed receiver does not undo the submission.
+See [Webhook settings and delivery](#webhook-settings-and-delivery-hook-01).
 
 Run `npm run test:responses` for real PostgreSQL validation, rollback and both lock
 orders of submit versus publish/unpublish/archive. The suite creates and removes
 its own isolated schema and never resets application data. It also runs in the
 migration workflow; hosted CI execution must be checked separately.
+
+## Owner responses (RESP-02)
+
+Choose **View responses** on a dashboard form. The owner list shows respondent
+email, submission time and original version, newest first, with 50 rows per page.
+Open **View response** for historical questions and selected choice labels.
+Unanswered questions show **Not answered**; date answers retain YYYY-MM-DD.
+Unpublishing keeps owner access; archiving hides both response routes.
+
+Authenticated API routes (both no-store and owner-scoped):
+- `GET /forms/:formId/responses?page=0`: form summary, responses, total, page, pageSize.
+- `GET /forms/:formId/responses/:responseId`: historical detail in `response`.
+
+Run `npm run test:owned-responses` for history, all eight answer types, ownership,
+empty forms, sparse answers, pagination and archive checks against an isolated
+PostgreSQL schema. The migration workflow includes this command; hosted execution
+has not been observed. No additional migration is needed for these read views.
+
+## Versioned XLSX export (EXPORT-01)
+
+On a form's response list, choose **Export XLSX**. The authenticated API route is
+`GET /forms/:formId/responses/export`; unauthorized requests receive 401 and
+non-owned, missing or archived forms receive 404. Unpublished forms remain
+exportable by their owner. Downloads use no-store and a UUID-based filename.
+
+Each version **with responses** gets its own tab, named `Version 1`, `Version 2`,
+and so on in version-number order. Empty intermediate versions are omitted. Each
+sheet has Email and Submitted at (UTC), followed by numbered original question
+labels in their original order. Numbering distinguishes duplicate labels. Rows
+are oldest first; repeated emails remain separate rows. Different versions can
+have different columns, so edits/deletions never change historical exports.
+
+Unanswered values are blank. Multiple choices selected in one answer appear on
+separate lines within one wrapped cell, in submission order. Date answers remain
+YYYY-MM-DD text; timestamps use UTC ISO text; scales are numeric. User text is
+written as literal strings, including values beginning with `=`; no formulas are
+created. Headers are frozen and filterable.
+
+With no responses at all, the export has a header-only sheet for the latest
+published version, including after unpublishing. A never-published draft exports
+a `Responses` sheet with only the two system headers, never draft questions.
+
+The API builds a consistent database statement snapshot and writes the workbook
+to the HTTP response using [ExcelJS](https://github.com/exceljs/exceljs#writing-xlsx).
+This streams the download but holds the selected records/workbook in server memory;
+it is not a constant-memory bulk-export pipeline. The frontend buffers the download
+as a Blob, with a 60-second timeout. Excel row/column/cell-text limits return 422
+before download headers rather than silently truncating answers. Large-scale export
+benchmarking is outside the current assessment scope.
+
+ExcelJS is server-only. Its UUID dependency is overridden to patched version 11.1.1
+(the CommonJS v4 call used by ExcelJS remains compatible). Run `npm ci` after pulling
+this change. Run `npm run test:export` for real PostgreSQL + XLSX round-trip checks.
+The suite creates/removes its own schema and writes local review workbooks under
+ignored `docs/review/`. The CI migration workflow runs it too.
+
+## Webhook settings and delivery (HOOK-01)
+
+Choose **Webhook** on a dashboard form to configure its receiver URL and secret,
+inspect the latest 50 attempts, or disable future delivery. Refresh settings/logs
+after submitting to see completion. Existing attempts remain after disabling.
+
+Owner-only routes (all no-store):
+- `GET /forms/:formId/webhook`: `{ webhook: { url, hasSecret, attempts } }`.
+- `PUT /forms/:formId/webhook`: `{ "url": "http://localhost:4001/webhooks", "secret": "your-shared-secret" }`.
+  Omit secret to retain an existing secret; the first configuration requires one.
+- `DELETE /forms/:formId/webhook`: disables future delivery, returning 204.
+
+The URL must be HTTP(S), at most 2,048 characters, without embedded credentials or
+fragments. The secret is 1–512 visible ASCII characters without spaces; it is sent
+only in `X-Webhook-Secret`, never returned by settings/public endpoints or attempt
+logs. The secret is stored server-side in PostgreSQL; protect DB access/backups.
+Use a dedicated shared secret rather than an account password. Do not put secrets
+in URL query parameters, since destination URLs appear in owner logs.
+
+The payload uses the immutable submitted version and original selected labels:
+
+```json
+{
+  "form": { "id": "<form UUID>", "title": "Survey", "formVersionId": "<version UUID>" },
+  "response": {
+    "id": "<response UUID>", "submittedAt": "2026-10-11T09:00:00.000Z",
+    "email": "respondent@example.test",
+    "answers": [
+      { "questionId": "<question UUID>", "label": "Team", "type": "dropdown", "value": "Support" }
+    ]
+  }
+}
+```
+
+Answers are in historical question order. Text/date values are strings, dates are
+YYYY-MM-DD, scales are numbers, dropdown/radio values are one selected label or
+null, and multi-select/checkbox values are arrays of selected labels (empty when
+unanswered). Other unanswered values are null. There are no option IDs, draft
+content or webhook credentials in the payload.
+
+The submission transaction captures the settings under the same root form lock
+used for owner mutations. After COMMIT, the API sends 201 and schedules delivery
+in the background. HTTP has a five-second timeout, no redirects and no retries.
+No database connection is held during the HTTP wait. Every started delivery has
+an attempt row, with completion timestamp, HTTP status or null, and a sanitized
+error. Receiver response bodies and raw exceptions are never logged. Non-2xx,
+including redirects, count as failures. Missing status is displayed without an
+invented HTTP code. Unpublishing retains owner settings/log access; archiving
+returns 404 for these routes. Already accepted jobs retain their captured settings.
+
+This is deliberately in-process fire-and-forget, not a durable queue. A process
+crash can lose an unscheduled/in-flight event or leave an attempt pending. Failure
+to insert an attempt prevents the outgoing request; failure to finalize a log may
+leave it pending. Both emit a sanitized server diagnostic without changing the
+saved submission. Graceful shutdown drains current jobs within the existing
+10-second shutdown deadline. There is no automatic recovery/retry.
+
+Local/private HTTP destinations remain allowed in development when
+`WEBHOOK_ALLOWED_ORIGINS` is unset. In production, startup requires that setting:
+a comma-separated list of exact trusted origins without paths or trailing slashes,
+e.g. `https://receiver.example.com,http://127.0.0.1:4001`. Scheme, host and port must
+match; subdomains are not implicitly allowed. Settings writes and every delivery
+(including existing configurations) enforce the list. Blocked deliveries are logged
+without sending a request or failing the submission. Only list receivers controlled
+by trusted operators. This is not a DNS-rebinding-proof network sandbox: production
+also needs outbound firewall restrictions. Since the API runs on Windows, use the
+consumer's Windows-host URL, as described below.
+
+`npm run test:webhooks` uses a disposable PostgreSQL schema and local test receiver
+for success, wrong secret, non-2xx, redirects, timeout, connection failure,
+configuration snapshotting and owner/archive isolation. It runs in migration CI.
+
+## Webhook consumer (HOOK-02)
+
+On first setup, copy the example without overwriting an existing configuration:
+
+```powershell
+if (!(Test-Path apps/webhook-consumer/.env)) {
+  Copy-Item apps/webhook-consumer/.env.example apps/webhook-consumer/.env
+}
+npm run dev:consumer
+```
+
+The consumer requires `WEBHOOK_SECRET` (1–512 visible ASCII characters, no spaces).
+The example matches the seeded survey's demo secret; use a dedicated secret for
+other data. It listens on **127.0.0.1:4001** by default. In the form's Webhook page,
+set URL `http://127.0.0.1:4001/webhooks` and the same secret. The API and consumer
+both run on Windows; Docker is only hosting PostgreSQL. Containerized deployment
+would require a different network/binding configuration.
+
+Submit the published form, then open `http://127.0.0.1:4001` and select **Refresh
+deliveries**. The latest 50 payloads appear newest first, with receiver timestamps.
+Payload JSON is escaped as text, including respondent HTML. The page has no login
+and contains respondent data, so the server binds only to loopback. All responses
+are no-store. Restarting the consumer clears its list; API response records and
+delivery logs remain in PostgreSQL.
+
+`POST /webhooks` checks exactly one `X-Webhook-Secret` header before parsing JSON.
+Missing/wrong/duplicate headers return 401. JSON objects are accepted verbatim
+with 204; malformed JSON returns 400, unsupported content type/encoding returns
+415, and bodies exceeding 4 MiB return 413. The extra headroom accommodates
+historical labels added to submissions. No retries or duplicate-event suppression
+are provided; each accepted delivery occupies one history entry.
+
+Run `npm run test:consumer` for receiver/HTML/history checks and
+`npm run test:webhooks` for real PostgreSQL + API-to-consumer delivery, logging
+failures, wrong secret, timeout, connection errors and ownership boundaries.
+Both run in CI.
+
+### Audit fixes: export bounds and sealed histories
+
+Publication rejects multi-select/checkbox option sets whose trimmed labels, joined
+with newline separators, exceed Excel's 32,767-character cell limit. Drafts may
+still contain those options while editing. Every newly published selection can
+therefore fit the existing one-answer-per-cell export layout. Historical definitions
+are never truncated or rewritten. Existing over-limit cells still return an explicit
+422; none of the local published multi-selection option sets exceeded this limit
+when checked on October 12, 2026. Multi-select uses a collapsible selection dropdown;
+checkbox questions keep their always-visible checkbox group.
+
+Run the normal migration command after pulling these changes. Migration
+`002_seal_published_definitions.sql` adds a server-assigned transaction marker.
+Questions/options may only be inserted in their version's creation transaction;
+commit automatically seals the tree. Existing versions have a NULL marker and
+are already sealed. The original UPDATE/DELETE protections remain, including
+protection of the marker. This relies on application roles not having privileges
+to disable triggers or change the schema; it is not protection from a DB superuser.
+No records or migration history are removed, and migration 001 is unchanged.
